@@ -47,28 +47,30 @@ Final_FPTU/
 
 ### Install Dependencies
 
-```bash
+```
 pip install pandas scikit-learn xgboost joblib openpyxl beautifulsoup4
+```
 
-4. Dataset Description
+## 4. Dataset Description
 
-The dataset contains phishing and benign email samples with the following fields:
+The dataset contains phishing and benign email samples with the following important fields:
 
-Column	Description
-body	Email content
-label	Classification label
-Label Encoding
-
-1 → Phishing
-
-0 → Benign
+- body: Email content
+- label: Classification label
+  - 1 = phishing
+  - 0 = benign
 
 The original dataset is stored in Excel format and converted to a clean CSV file before training.
 
-5. Convert Excel Dataset to Clean CSV
+## 5. Convert Excel Dataset to Clean CSV
 
 To avoid CSV corruption caused by Excel encoding issues, the dataset is converted using Python:
 
+```
+python
+```
+
+```
 import pandas as pd
 
 df = pd.read_excel("data/phishing_email_dataset.xlsx")
@@ -77,121 +79,124 @@ df = df[["body", "label"]]
 
 df.to_csv("data/clean_phishing_dataset.csv", index=False, encoding="utf-8")
 print("Clean dataset created")
+```
 
-6. Training the Model
+## 6. Training the Model
 
 Train the phishing detection model using the clean CSV dataset:
 
-python -m src.train \
-  --data data/clean_phishing_dataset.csv \
-  --text-col body \
-  --label-col label
-
-Output Files
+```
+python -m src.train --data data/clean_phishing_dataset.csv --text-col body --label-col label
+```
 
 After training, the following files will be generated:
 
+```
 models/
 ├── model.joblib
 └── metadata.json
+```
 
-7. Predicting Phishing Emails
-7.1 Predict via Command Line
-python -m src.predict \
-  --model models/model.joblib \
-  --text "Urgent: Verify your bank account immediately"
+## 7. Predicting Phishing Emails
 
-Example Output
+### 7.1 Predict via Command Line
+
+```
+python -m src.predict --model models/model.joblib --text "Urgent: Verify your bank account immediately"
+```
+
+Example Output:
+
+```
 {
   "pred": 1,
   "proba_phishing": 0.93,
   "threshold": 0.5
 }
+```
 
-7.2 Prediction Meaning
-Field	Meaning
-pred	1 = phishing, 0 = benign
-proba_phishing	Probability of phishing
-threshold	Decision threshold
-8. Using a Different Dataset
+### 7.2 Prediction Meaning
+
+- pred = 1 → phishing email
+- pred = 0 → benign email
+- proba_phishing → probability score of phishing
+
+## 8. Using a Different Dataset
 
 The system supports retraining with any compatible dataset.
 
-8.1 CSV Dataset
-python -m src.train \
-  --data data/new_dataset.csv \
-  --text-col email_text \
-  --label-col is_phishing
+### 8.1 CSV Dataset
 
-8.2 Excel Dataset
+```
+python -m src.train --data data/new_dataset.csv --text-col email_text --label-col is_phishing
+```
 
-Convert Excel to CSV using Python
+### 8.2 Excel Dataset
 
-Train the model with the converted CSV file
+1. Convert Excel to CSV using Python
+2. Train the model with the converted CSV file
 
-8.3 Dataset Without Labels
+### 8.3 Dataset Without Labels
 
 If the dataset does not contain labels:
 
-❌ Model cannot be retrained
+- ❌ Model cannot be retrained
+- ✅ Existing trained model can still be used for prediction
 
-✅ Existing trained model can still be used for prediction
+## 9. Model Architecture
 
-9. Model Architecture
-9.1 Text Preprocessing
+### Text Preprocessing:
 
-HTML tag removal
+- HTML tag removal
+- Lowercasing
+- Text normalization
 
-Lowercasing
+### Feature Extraction:
 
-Text normalization
+- TF-IDF (word & n-grams)
+- URL-based features
 
-9.2 Feature Extraction
+### Classifier:
 
-TF-IDF (word & n-grams)
+- XGBoost (XGBClassifier)
 
-URL-based features
+### XGBoost is chosen for:
 
-9.3 Classifier
+- Strong performance on sparse text features
+- Robustness against overfitting
+- Fast training and inference
 
-XGBoost (XGBClassifier)
+## 10. Demo Workflow
 
-XGBoost is chosen for:
+#### 1. Verify Trained Model
 
-Strong performance on sparse text features
-
-Robustness against overfitting
-
-Fast training and inference
-
-10. Demo Workflow
-10.1 Verify Trained Model
-dir models
-
-10.2 Predict Phishing Email
-python -m src.predict \
-  --model models/model.joblib \
-  --text "Urgent security alert"
-
-10.3 Predict Benign Email
-python -m src.predict \
-  --model models/model.joblib \
-  --text "Team meeting at 10 AM tomorrow"
-
-11. Conclusion
-
-This project demonstrates a practical AI-based phishing email detection system that:
-
-Can be retrained with different datasets
-
-Produces probabilistic predictions
-
-Is suitable for real-world email security integration
-
-12. Future Improvements
-
-Web-based demo using Flask or FastAPI
-Integration with email servers (SMTP / IMAP)
-Advanced NLP models (BERT, RoBERTa)
-Continuous learning with new phishing samples
 ```
+dir models
+```
+
+#### 2. Predict Phishing Email
+
+```
+python -m src.predict --model models/model.joblib --text "Urgent security alert"
+```
+
+#### 3. Predict Benign Email
+
+```
+python -m src.predict --model models/model.joblib --text "Team meeting at 10 AM tomorrow"
+```
+
+## 11. Conclusion
+
+##### This project demonstrates a practical AI-based phishing email detection system that:
+
+- Can be retrained with different datasets
+- Produces probabilistic predictions
+- Is suitable for real-world email security integration
+
+## 12. Future Improvements
+
+- Web-based demo using Flask or FastAPI
+- Integration with email servers (SMTP / IMAP)
+- Advanced NLP models (BERT, RoBERTa)
+- Continuous learning with new phishing samples

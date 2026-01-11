@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Phishing Email Detection - Full Network & Workflow</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      background: #0f172a;
+      color: #e5e7eb;
+    }
+    header {
+      padding: 24px;
+      background: #020617;
+      border-bottom: 1px solid #1e293b;
+    }
+    h1 { margin: 0; font-size: 26px; }
+    h2 { margin-top: 32px; }
+    p { color: #cbd5f5; line-height: 1.6; }
+    main {
+      max-width: 1200px;
+      margin: auto;
+      padding: 24px;
+    }
+    .box {
+      background: #020617;
+      border: 1px solid #1e293b;
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 20px;
+    }
+    .mermaid {
+      background: #020617;
+      border-radius: 12px;
+      padding: 16px;
+      overflow-x: auto;
+    }
+    footer {
+      text-align: center;
+      font-size: 13px;
+      color: #94a3b8;
+      padding: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Phishing Email Detection System</h1>
+  <p>Complete Network Architecture & Workflow Diagram</p>
+</header>
+
+<main>
+
+  <section class="box">
+    <h2>1. System Network Architecture</h2>
+    <p>
+      This diagram describes the overall network architecture of the phishing email detection system,
+      including data ingestion, AI model service, and user interaction layers.
+    </p>
+
+    <div class="mermaid">
+flowchart LR
+User[User / Analyst] -->|Submit Email| UI[Web UI / CLI / API]
+
+EmailServer[(Mail Server<br/>SMTP / IMAP)] --> Ingest[Email Ingestion Service]
+
+UI --> PredictAPI[Prediction API Service]
+Ingest --> PredictAPI
+
+PredictAPI --> Clean[Text Preprocessing<br/>HTML Cleaning<br/>Normalization]
+Clean --> Feature[Feature Extraction<br/>TF-IDF<br/>URL Features]
+Feature --> Model[(Trained ML Model<br/>XGBoost)]
+Model --> Result[Prediction Result<br/>Label + Probability]
+
+Result --> UI
+    </div>
+  </section>
+
+  <section class="box">
+    <h2>2. Model Training Pipeline (Offline)</h2>
+    <p>
+      This workflow shows how the AI model is trained using labeled email datasets.
+      The training process is independent from the prediction service.
+    </p>
+
+    <div class="mermaid">
+flowchart TB
+RawData[(Raw Dataset<br/>CSV / Excel / Kaggle)] --> Load[Load Dataset<br/>Auto-detect Columns]
+Load --> CleanTrain[Clean & Normalize Text]
+CleanTrain --> FeatureTrain[Feature Engineering<br/>TF-IDF + Numeric Features]
+FeatureTrain --> Split[Train / Validation / Test Split]
+Split --> TrainModel[Train Model<br/>XGBoost]
+TrainModel --> Evaluate[Evaluate Model<br/>F1 / ROC-AUC]
+Evaluate --> SaveModel[Save Artifacts<br/>model.joblib<br/>metadata.json]
+    </div>
+  </section>
+
+  <section class="box">
+    <h2>3. Prediction Workflow (Online / Real-time)</h2>
+    <p>
+      This workflow illustrates how an incoming email is processed and classified in real-time.
+    </p>
+
+    <div class="mermaid">
+flowchart TB
+Input[Incoming Email Text] --> Preprocess[Text Preprocessing]
+Preprocess --> FeatureGen[Feature Generation]
+FeatureGen --> LoadModel[Load Trained Model]
+LoadModel --> Infer[Predict Probability]
+Infer --> Decision{Probability >= Threshold?}
+Decision -- Yes --> Phishing[Phishing Email]
+Decision -- No --> Benign[Benign Email]
+    </div>
+  </section>
+
+  <section class="box">
+    <h2>4. End-to-End Workflow Summary</h2>
+    <p>
+      The complete system workflow from dataset preparation to real-time phishing detection:
+    </p>
+
+    <div class="mermaid">
+flowchart LR
+Dataset[(Dataset)] --> Training[Model Training]
+Training --> ModelStore[(Model Storage)]
+ModelStore --> PredictionService[Prediction Service]
+PredictionService --> UserResult[User Decision / Alert]
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Phishing Email Detection System &mdash; Academic Project Diagram
+</footer>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "dark" });
+</script>
+
+</body>
+</html>
