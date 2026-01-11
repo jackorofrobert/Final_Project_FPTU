@@ -11,6 +11,7 @@ The model uses **supervised learning** to classify emails as **phishing** or **b
 
 ## 2. Project Structure
 
+```
 Final_FPTU/
 ├── src/
 │ ├── train.py # Train model
@@ -29,6 +30,7 @@ Final_FPTU/
 │ └── metadata.json # Evaluation metrics
 │
 └── README.md
+```
 
 ---
 
@@ -51,6 +53,8 @@ Final_FPTU/
 pip install pandas scikit-learn xgboost joblib openpyxl beautifulsoup4
 ```
 
+---
+
 ## 4. Dataset Description
 
 The dataset contains phishing and benign email samples with the following important fields:
@@ -60,7 +64,7 @@ The dataset contains phishing and benign email samples with the following import
   - 1 = phishing
   - 0 = benign
 
-The original dataset is stored in Excel format and converted to a clean CSV file before training.
+## The original dataset is stored in Excel format and converted to a clean CSV file before training.
 
 ## 5. Convert Excel Dataset to Clean CSV
 
@@ -81,6 +85,8 @@ df.to_csv("data/clean_phishing_dataset.csv", index=False, encoding="utf-8")
 print("Clean dataset created")
 ```
 
+---
+
 ## 6. Training the Model
 
 Train the phishing detection model using the clean CSV dataset:
@@ -96,6 +102,8 @@ models/
 ├── model.joblib
 └── metadata.json
 ```
+
+---
 
 ## 7. Predicting Phishing Emails
 
@@ -121,9 +129,11 @@ Example Output:
 - pred = 0 → benign email
 - proba_phishing → probability score of phishing
 
+---
+
 ## 8. Using a Different Dataset
 
-The system supports retraining with any compatible dataset.
+### The system supports retraining with any compatible dataset.
 
 ### 8.1 CSV Dataset
 
@@ -142,6 +152,8 @@ If the dataset does not contain labels:
 
 - ❌ Model cannot be retrained
 - ✅ Existing trained model can still be used for prediction
+
+---
 
 ## 9. Model Architecture
 
@@ -166,6 +178,8 @@ If the dataset does not contain labels:
 - Robustness against overfitting
 - Fast training and inference
 
+---
+
 ## 10. Demo Workflow
 
 #### 1. Verify Trained Model
@@ -186,6 +200,8 @@ python -m src.predict --model models/model.joblib --text "Urgent security alert"
 python -m src.predict --model models/model.joblib --text "Team meeting at 10 AM tomorrow"
 ```
 
+---
+
 ## 11. Conclusion
 
 ##### This project demonstrates a practical AI-based phishing email detection system that:
@@ -193,6 +209,8 @@ python -m src.predict --model models/model.joblib --text "Team meeting at 10 AM 
 - Can be retrained with different datasets
 - Produces probabilistic predictions
 - Is suitable for real-world email security integration
+
+---
 
 ## 12. Future Improvements
 
