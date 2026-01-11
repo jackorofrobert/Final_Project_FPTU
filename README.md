@@ -64,7 +64,7 @@ The dataset contains phishing and benign email samples with the following import
   - 1 = phishing
   - 0 = benign
 
-## The original dataset is stored in Excel format and converted to a clean CSV file before training.
+The original dataset is stored in Excel format and converted to a clean CSV file before training.
 
 ## 5. Convert Excel Dataset to Clean CSV
 
