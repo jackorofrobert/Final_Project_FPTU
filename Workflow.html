@@ -1,140 +1,192 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Phishing Email Detection - Full Network & Workflow</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <title>Phishing Email Detection – Network + Workflow (v2)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, Helvetica, sans-serif;
-      background: #0f172a;
-      color: #e5e7eb;
+    :root{
+      --bg:#0b1220;
+      --panel:#071225;
+      --border:#1e293b;
+      --text:#e5e7eb;
+      --muted:#cbd5f5;
     }
-    header {
-      padding: 24px;
-      background: #020617;
-      border-bottom: 1px solid #1e293b;
+    body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text);}
+    header{
+      padding:28px 24px;
+      background:linear-gradient(135deg,#020617,#071225);
+      border-bottom:1px solid var(--border);
     }
-    h1 { margin: 0; font-size: 26px; }
-    h2 { margin-top: 32px; }
-    p { color: #cbd5f5; line-height: 1.6; }
-    main {
-      max-width: 1200px;
-      margin: auto;
-      padding: 24px;
+    header h1{margin:0;font-size:28px;}
+    header p{margin:8px 0 0;color:var(--muted);max-width:980px;line-height:1.6;}
+    main{max-width:1280px;margin:0 auto;padding:28px 20px 40px;}
+    .card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:22px;
+      margin:18px 0;
+      box-shadow:0 10px 24px rgba(0,0,0,.25);
     }
-    .box {
-      background: #020617;
-      border: 1px solid #1e293b;
-      border-radius: 12px;
-      padding: 20px;
-      margin-top: 20px;
+    h2{margin:0 0 10px;font-size:20px;}
+    p{margin:8px 0 0;color:var(--muted);line-height:1.7;max-width:1040px;}
+    .mermaid{
+      background:rgba(2,6,23,.35);
+      border:1px solid rgba(30,41,59,.6);
+      border-radius:12px;
+      padding:16px;
+      margin-top:14px;
+      overflow-x:auto;
     }
-    .mermaid {
-      background: #020617;
-      border-radius: 12px;
-      padding: 16px;
-      overflow-x: auto;
+    footer{
+      text-align:center;
+      color:#94a3b8;
+      padding:22px 18px;
+      border-top:1px solid var(--border);
     }
-    footer {
-      text-align: center;
-      font-size: 13px;
-      color: #94a3b8;
-      padding: 20px;
+    .tips{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:10px;
+      margin-top:10px;
     }
+    .tip{
+      background:rgba(2,6,23,.35);
+      border:1px dashed rgba(148,163,184,.35);
+      border-radius:12px;
+      padding:12px 14px;
+      color:#dbeafe;
+      line-height:1.6;
+      font-size:14px;
+    }
+    code{font-family:Consolas,Menlo,monospace;font-size:0.95em;color:#e2e8f0;}
   </style>
 </head>
 <body>
 
 <header>
   <h1>Phishing Email Detection System</h1>
-  <p>Complete Network Architecture & Workflow Diagram</p>
+  <p>
+    Network Architecture and Full Workflow (v2). This version is Mermaid v10 safe (no special characters that break parsing)
+    and includes both the network view and the training and prediction workflows, including dataset memory.
+  </p>
 </header>
 
 <main>
 
-  <section class="box">
-    <h2>1. System Network Architecture</h2>
+  <section class="card">
+    <h2>1) Network Architecture</h2>
     <p>
-      This diagram describes the overall network architecture of the phishing email detection system,
-      including data ingestion, AI model service, and user interaction layers.
+      This diagram shows how email data flows from the mail server to the detection service, and how users interact with the system.
+      The ML model is stored as artifacts and loaded by the prediction service.
     </p>
 
     <div class="mermaid">
 flowchart LR
-User[User / Analyst] -->|Submit Email| UI[Web UI / CLI / API]
+User[User or Analyst] --> UI[CLI or API]
+Mail[Mail Server SMTP IMAP] --> Ingest[Email Ingestion Service]
+Ingest --> Predict[Prediction Service]
+UI --> Predict
 
-EmailServer[(Mail Server<br/>SMTP / IMAP)] --> Ingest[Email Ingestion Service]
+Predict --> Pre[Preprocess Text]
+Pre --> Feat[Feature Builder TFIDF plus URL]
+Feat --> Model[XGBoost Model]
+Model --> Out[Result Label and Probability]
+Out --> UI
 
-UI --> PredictAPI[Prediction API Service]
-Ingest --> PredictAPI
-
-PredictAPI --> Clean[Text Preprocessing<br/>HTML Cleaning<br/>Normalization]
-Clean --> Feature[Feature Extraction<br/>TF-IDF<br/>URL Features]
-Feature --> Model[(Trained ML Model<br/>XGBoost)]
-Model --> Result[Prediction Result<br/>Label + Probability]
-
-Result --> UI
+ModelStore[Model Artifacts model joblib] --> Predict
     </div>
   </section>
 
-  <section class="box">
-    <h2>2. Model Training Pipeline (Offline)</h2>
+  <section class="card">
+    <h2>2) Offline Training Workflow</h2>
     <p>
-      This workflow shows how the AI model is trained using labeled email datasets.
-      The training process is independent from the prediction service.
+      Training loads all datasets from a folder, normalizes columns, applies dataset memory by caching datasets into a history store,
+      merges in memory, then trains and evaluates the model.
     </p>
 
     <div class="mermaid">
 flowchart TB
-RawData[(Raw Dataset<br/>CSV / Excel / Kaggle)] --> Load[Load Dataset<br/>Auto-detect Columns]
-Load --> CleanTrain[Clean & Normalize Text]
-CleanTrain --> FeatureTrain[Feature Engineering<br/>TF-IDF + Numeric Features]
-FeatureTrain --> Split[Train / Validation / Test Split]
-Split --> TrainModel[Train Model<br/>XGBoost]
-TrainModel --> Evaluate[Evaluate Model<br/>F1 / ROC-AUC]
-Evaluate --> SaveModel[Save Artifacts<br/>model.joblib<br/>metadata.json]
+Incoming[Incoming Datasets Folder] --> Scan[Dataset Scanner]
+Scan --> Load[Dataset Loader CSV XLSX JSON]
+Load --> Norm[Normalize Columns]
+Norm --> Cache[Cache To History Store]
+Cache --> Merge[Merge In Memory]
+Merge --> Clean[Text Cleaning]
+Clean --> FE[Feature Engineering]
+FE --> Train[Train XGBoost]
+Train --> Eval[Evaluate F1 AUC]
+Eval --> Save[Save Artifacts]
+Save --> Store[models Folder]
+    </div>
+
+    <div class="tips">
+      <div class="tip">
+        Column override for unusual datasets:
+        <br/><code>python -m src.train --data-dir data --text-col email_text --label-col is_phishing</code>
+      </div>
+      <div class="tip">
+        Custom history location (optional):
+        <br/><code>python -m src.train --data-dir data --history-dir custom_history</code>
+      </div>
     </div>
   </section>
 
-  <section class="box">
-    <h2>3. Prediction Workflow (Online / Real-time)</h2>
+  <section class="card">
+    <h2>3) Dataset Memory Strategy</h2>
     <p>
-      This workflow illustrates how an incoming email is processed and classified in real-time.
-    </p>
-
-    <div class="mermaid">
-flowchart TB
-Input[Incoming Email Text] --> Preprocess[Text Preprocessing]
-Preprocess --> FeatureGen[Feature Generation]
-FeatureGen --> LoadModel[Load Trained Model]
-LoadModel --> Infer[Predict Probability]
-Infer --> Decision{Probability >= Threshold?}
-Decision -- Yes --> Phishing[Phishing Email]
-Decision -- No --> Benign[Benign Email]
-    </div>
-  </section>
-
-  <section class="box">
-    <h2>4. End-to-End Workflow Summary</h2>
-    <p>
-      The complete system workflow from dataset preparation to real-time phishing detection:
+      The model is a batch learner. To retain historical knowledge, the system stores copies of all datasets used for training.
+      Retraining always uses historical datasets plus new datasets.
     </p>
 
     <div class="mermaid">
 flowchart LR
-Dataset[(Dataset)] --> Training[Model Training]
-Training --> ModelStore[(Model Storage)]
-ModelStore --> PredictionService[Prediction Service]
-PredictionService --> UserResult[User Decision / Alert]
+NewDS[New Dataset Added] --> TrainRun[Training Run]
+TrainRun --> History[History Store]
+History --> NextTrain[Next Training Run]
+NextTrain --> ModelNew[New Model Version]
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>4) Online Prediction Workflow</h2>
+    <p>
+      Real time prediction via CLI or API. The service loads the trained artifacts, converts email text into features,
+      and outputs a phishing label and probability.
+    </p>
+
+    <div class="mermaid">
+flowchart TB
+Input[Email Text] --> P1[Preprocess Text]
+P1 --> P2[Build Features]
+P2 --> P3[Load Model]
+P3 --> P4[Predict Probability]
+P4 --> D{Prob ge Threshold}
+D -- Yes --> R1[Phishing]
+D -- No --> R0[Benign]
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>5) End to End Summary</h2>
+    <p>
+      High level lifecycle from datasets to model artifacts to real time detection.
+    </p>
+
+    <div class="mermaid">
+flowchart LR
+DS[Datasets] --> TR[Offline Training]
+TR --> MA[Model Artifacts]
+MA --> PR[Online Prediction]
+PR --> RES[Alert or Safe Result]
     </div>
   </section>
 
 </main>
 
 <footer>
-  Phishing Email Detection System &mdash; Academic Project Diagram
+  Phishing Email Detection System – Network and Workflow v2
 </footer>
 
 <script type="module">
