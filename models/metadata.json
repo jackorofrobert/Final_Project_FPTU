@@ -1,31 +1,21 @@
 {
+  "text_col": "email_text",
+  "label_col": "label",
+  "threshold": 0.5,
   "f1": 1.0,
   "roc_auc": 1.0,
-  "report": {
-    "0": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1-score": 1.0,
-      "support": 1.0
-    },
-    "1": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1-score": 1.0,
-      "support": 1.0
-    },
-    "accuracy": 1.0,
-    "macro avg": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1-score": 1.0,
-      "support": 2.0
-    },
-    "weighted avg": {
-      "precision": 1.0,
-      "recall": 1.0,
-      "f1-score": 1.0,
-      "support": 2.0
-    }
-  }
+  "confusion_matrix": [
+    [
+      20000,
+      0
+    ],
+    [
+      0,
+      20000
+    ]
+  ],
+  "n_samples": 200000,
+  "n_train": 160000,
+  "n_test": 40000,
+  "notes": "Dataset memory implemented via data/history cache; training uses accumulated datasets."
 }

@@ -1,26 +1,21 @@
-from dataclasses import dataclass
 from pathlib import Path
 
-@dataclass
-class TrainConfig:
-    seed: int = 42
-    test_size: float = 0.15
-    val_size: float = 0.15  # split from remaining train
-    text_col: str | None = None
-    label_col: str | None = None
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-    # TF-IDF
-    max_features: int = 120_000
-    ngram_range: tuple[int, int] = (1, 2)
-    min_df: int = 2
+DATA_DIR_DEFAULT = PROJECT_ROOT / "data"
+INCOMING_DIR = DATA_DIR_DEFAULT / "incoming"
+HISTORY_DIR = DATA_DIR_DEFAULT / "history"
 
-    # XGBoost
-    n_estimators: int = 600
-    learning_rate: float = 0.05
-    max_depth: int = 6
-    subsample: float = 0.8
-    colsample_bytree: float = 0.8
-    reg_lambda: float = 1.0
-    reg_alpha: float = 0.0
+MODELS_DIR = PROJECT_ROOT / "models"
+MODELS_DIR.mkdir(parents=True, exist_ok=True)
 
-    out_dir: Path = Path("models")
+RANDOM_SEED = 42
+DEFAULT_THRESHOLD = 0.5
+
+# Common column name candidates
+TEXT_COL_CANDIDATES = [
+    "body", "email_body", "content", "message", "text", "email_text", "mail", "raw_text"
+]
+LABEL_COL_CANDIDATES = [
+    "label", "class", "target", "is_phishing", "phishing", "spam", "y"
+]
