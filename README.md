@@ -81,15 +81,21 @@ This approach ensures correct machine learning behavior and aligns with real-wor
 
 ### 5.1 Train Using All Datasets in a Folder
 
+```
 python -m src.train --data-dir data
+```
 
 ### 5.2 Force Text and Label Columns
 
+```
 python -m src.train --data-dir data --text-col email_text --label-col is_phishing
+```
 
 ### 5.3 Custom Dataset Memory Location (Optional)
 
+```
 python -m src.train --data-dir data --history-dir custom_history/
+```
 
 ---
 
@@ -108,11 +114,15 @@ Metrics include F1-score, ROC-AUC, and confusion matrix.
 
 ### Predict Phishing Email
 
+```
 python -m src.predict --text "Urgent: Verify your bank account immediately"
+```
 
 ### Predict Benign Email
 
+```
 python -m src.predict --text "Team meeting at 10 AM tomorrow"
+```
 
 ---
 
