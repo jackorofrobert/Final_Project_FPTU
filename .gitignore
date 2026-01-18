@@ -1,2 +1,11 @@
 plan.md
 README_VI.md
+__pycache__/
+
+openspec
+AGENTS.md
+.cursor
+.env
+
+logs/
+*.log

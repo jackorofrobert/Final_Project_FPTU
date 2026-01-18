@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+
+{% block title %}Analyze Email - Phishing Detector{% endblock %}
+
+{% block content %}
+<h1>Analyze Email</h1>
+
+<div class="analyze-form">
+    <form method="POST" action="{{ url_for('prediction.analyze') }}">
+        <div class="form-group">
+            <label for="email_text">Email Content:</label>
+            <textarea id="email_text" name="email_text" rows="15" class="form-control" required>{{ email_text or '' }}</textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Analyze</button>
+    </form>
+</div>
+
+{% if result %}
+<div class="analysis-result">
+    <h2>Analysis Result</h2>
+    {% if result.prediction == 1 %}
+        <div class="alert alert-danger">
+            <strong>⚠️ Phishing Detected!</strong>
+            <p>Confidence: {{ "%.2f"|format(result.probability * 100) }}%</p>
+            <p>Threshold: {{ "%.2f"|format(result.threshold * 100) }}%</p>
+        </div>
+    {% else %}
+        <div class="alert alert-success">
+            <strong>✓ Benign Email</strong>
+            <p>Confidence: {{ "%.2f"|format(result.probability * 100) }}%</p>
+            <p>Threshold: {{ "%.2f"|format(result.threshold * 100) }}%</p>
+        </div>
+    {% endif %}
+</div>
+{% endif %}
+{% endblock %}

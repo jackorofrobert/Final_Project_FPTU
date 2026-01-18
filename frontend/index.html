@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phishing Email Detection System</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container">
+            <a href="#" data-page="home" class="logo">Phishing Detector</a>
+            <div class="nav-links">
+                <a href="#" data-page="home">Home</a>
+                <a href="#" data-page="analyze">Analyze</a>
+                <button class="btn btn-sm" onclick="app.connectGmail()">Connect Gmail</button>
+            </div>
+        </div>
+    </nav>
+
+    <main class="container">
+        <div id="messages" class="flash-messages"></div>
+        <div id="loading" style="display: none; padding: 1rem; text-align: center;">Loading...</div>
+        <div id="app-content">
+            <!-- Content will be loaded here by JavaScript -->
+        </div>
+    </main>
+
+    <footer>
+        <div class="container">
+            <p>&copy; 2024 Phishing Email Detection System</p>
+        </div>
+    </footer>
+
+    <script src="js/api.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/app.js"></script>
+</body>
+</html>

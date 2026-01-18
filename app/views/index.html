@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero">
+    <h1>Phishing Email Detection System</h1>
+    <p>AI-powered email analysis to detect phishing attempts</p>
+</div>
+
+<div class="features">
+    <div class="feature-card">
+        <h3>Connect Gmail</h3>
+        <p>Securely connect your Gmail account to fetch and analyze emails</p>
+        {% if not session.user_id %}
+            <a href="{{ url_for('auth.connect') }}" class="btn btn-primary">Connect Gmail</a>
+        {% else %}
+            <span class="badge badge-success">Connected</span>
+        {% endif %}
+    </div>
+
+    <div class="feature-card">
+        <h3>Fetch Emails</h3>
+        <p>Retrieve emails from your Gmail account for analysis</p>
+        {% if session.user_id %}
+            <a href="{{ url_for('email.fetch') }}" class="btn btn-primary">Fetch Emails</a>
+        {% else %}
+            <p class="text-muted">Connect Gmail first</p>
+        {% endif %}
+    </div>
+
+    <div class="feature-card">
+        <h3>Analyze Email</h3>
+        <p>Manually analyze email content for phishing detection</p>
+        <a href="{{ url_for('email.analyze') }}" class="btn btn-primary">Analyze Email</a>
+    </div>
+
+    <div class="feature-card">
+        <h3>View History</h3>
+        <p>Review your email analysis history and predictions</p>
+        {% if session.user_id %}
+            <a href="{{ url_for('history.predictions') }}" class="btn btn-primary">View History</a>
+        {% else %}
+            <p class="text-muted">Connect Gmail first</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

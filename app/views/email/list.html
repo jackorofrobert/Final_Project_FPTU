@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Email List - Phishing Detector{% endblock %}
+
+{% block content %}
+<h1>Your Emails</h1>
+
+<div class="email-list">
+    {% if emails %}
+        <table class="email-table">
+            <thead>
+                <tr>
+                    <th>Subject</th>
+                    <th>Sender</th>
+                    <th>Date</th>
+                    <th>Prediction</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for email in emails %}
+                <tr>
+                    <td>{{ email.subject or '(No Subject)' }}</td>
+                    <td>{{ email.sender }}</td>
+                    <td>{{ email.received_at[:10] if email.received_at else '' }}</td>
+                    <td>
+                        {% if email.prediction %}
+                            {% if email.prediction.prediction == 1 %}
+                                <span class="badge badge-danger">Phishing</span>
+                            {% else %}
+                                <span class="badge badge-success">Benign</span>
+                            {% endif %}
+                            <small>({{ "%.2f"|format(email.prediction.probability * 100) }}%)</small>
+                        {% else %}
+                            <span class="badge badge-secondary">Not Analyzed</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        <a href="{{ url_for('email.detail', email_id=email.id) }}" class="btn btn-sm">View</a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="text-muted">No emails found. <a href="{{ url_for('email.fetch') }}">Fetch emails from Gmail</a></p>
+    {% endif %}
+</div>
+{% endblock %}

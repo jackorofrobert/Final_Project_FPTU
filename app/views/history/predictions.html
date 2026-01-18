@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+
+{% block title %}Prediction History - Phishing Detector{% endblock %}
+
+{% block content %}
+<h1>Prediction History</h1>
+
+<div class="history-list">
+    {% if predictions %}
+        <table class="history-table">
+            <thead>
+                <tr>
+                    <th>Email Subject</th>
+                    <th>Sender</th>
+                    <th>Prediction</th>
+                    <th>Confidence</th>
+                    <th>Date</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pred in predictions %}
+                <tr>
+                    <td>{{ pred.email.subject if pred.email else '(No Subject)' }}</td>
+                    <td>{{ pred.email.sender if pred.email else 'N/A' }}</td>
+                    <td>
+                        {% if pred.prediction == 1 %}
+                            <span class="badge badge-danger">Phishing</span>
+                        {% else %}
+                            <span class="badge badge-success">Benign</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ "%.2f"|format(pred.probability * 100) }}%</td>
+                    <td>{{ pred.created_at[:10] if pred.created_at else '' }}</td>
+                    <td>
+                        {% if pred.email %}
+                            <a href="{{ url_for('email.detail', email_id=pred.email.id) }}" class="btn btn-sm">View Email</a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% else %}
+        <p class="text-muted">No predictions found. Analyze some emails to see history.</p>
+    {% endif %}
+</div>
+{% endblock %}

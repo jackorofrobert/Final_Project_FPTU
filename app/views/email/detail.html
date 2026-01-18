@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+
+{% block title %}Email Detail - Phishing Detector{% endblock %}
+
+{% block content %}
+<div class="email-detail">
+    <div class="email-header">
+        <h1>{{ email.subject or '(No Subject)' }}</h1>
+        <div class="email-meta">
+            <p><strong>From:</strong> {{ email.sender }}</p>
+            <p><strong>To:</strong> {{ email.recipient }}</p>
+            <p><strong>Date:</strong> {{ email.received_at }}</p>
+        </div>
+    </div>
+
+    <div class="email-prediction">
+        {% if email.prediction %}
+            <div class="prediction-result">
+                <h3>Analysis Result</h3>
+                {% if email.prediction.prediction == 1 %}
+                    <div class="alert alert-danger">
+                        <strong>⚠️ Phishing Detected!</strong>
+                        <p>Confidence: {{ "%.2f"|format(email.prediction.probability * 100) }}%</p>
+                    </div>
+                {% else %}
+                    <div class="alert alert-success">
+                        <strong>✓ Benign Email</strong>
+                        <p>Confidence: {{ "%.2f"|format(email.prediction.probability * 100) }}%</p>
+                    </div>
+                {% endif %}
+                <p><small>Model Version: {{ email.prediction.model_version or 'unknown' }}</small></p>
+            </div>
+        {% else %}
+            <div class="prediction-prompt">
+                <p>This email has not been analyzed yet.</p>
+                <form method="POST" action="{{ url_for('prediction.analyze_email', email_id=email.id) }}">
+                    <button type="submit" class="btn btn-primary">Analyze Email</button>
+                </form>
+            </div>
+        {% endif %}
+    </div>
+
+    <div class="email-body">
+        <h3>Email Content</h3>
+        <div class="email-content">
+            <pre>{{ email.body }}</pre>
+        </div>
+    </div>
+
+    <div class="email-actions">
+        <a href="{{ url_for('email.list') }}" class="btn btn-secondary">Back to List</a>
+    </div>
+</div>
+{% endblock %}
