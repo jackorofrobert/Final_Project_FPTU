@@ -6,6 +6,7 @@ openspec
 AGENTS.md
 .cursor
 .env
+data/app.db
 
 logs/
 *.log
