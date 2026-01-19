@@ -7,7 +7,6 @@ from datetime import datetime
 from email.utils import parsedate_to_datetime
 
 from google.oauth2.credentials import Credentials
-from google.auth.transport.requests import Request
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -50,22 +49,8 @@ class GmailService:
             logger.error(f'No credentials available for user [user_id={user_id}]')
             raise ValueError("No credentials available for user")
         
-        # Refresh token if expired
-        if creds.expired:
-            if not creds.refresh_token:
-                logger.warning(f'Cannot refresh token: refresh_token is not available [user_id={user_id}]')
-                raise ValueError("Token expired and refresh_token is not available. User needs to re-authorize.")
-            
-            # Verify refresh_token exists in database
-            if not AuthService.has_refresh_token(user_id):
-                logger.warning(f'Refresh token not found in database [user_id={user_id}]')
-                raise ValueError("Refresh token not found in database. User needs to re-authorize.")
-            
-            logger.info(f'Refreshing expired token for user [user_id={user_id}]')
-            creds.refresh(Request())
-            logger.info(f'Token refreshed successfully for user [user_id={user_id}]')
-            # Update stored tokens
-            # Note: This is simplified - in production, update the stored tokens
+        # Token expiration is handled automatically by Google's Credentials library
+        # when making API calls - no proactive checking needed
         
         return build('gmail', 'v1', credentials=creds)
     

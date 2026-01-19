@@ -103,20 +103,6 @@ class AuthService:
             return None
     
     @staticmethod
-    def is_token_expired(user_id: int) -> bool:
-        """Check if user's token is expired."""
-        logger.debug(f'Checking token expiration for user [user_id={user_id}]')
-        token_record = OAuthToken.get_by_user_id(user_id)
-        if not token_record or not token_record['expires_at']:
-            logger.debug(f'Token expiration check: no token or expiration date [user_id={user_id}]')
-            return True
-        
-        expires_at = datetime.fromisoformat(token_record['expires_at'])
-        is_expired = datetime.now() >= expires_at
-        logger.debug(f'Token expiration check: expired={is_expired} [user_id={user_id}]')
-        return is_expired
-    
-    @staticmethod
     def has_refresh_token(user_id: int) -> bool:
         """Check if user has a refresh token available for token refresh."""
         logger.debug(f'Checking refresh token availability for user [user_id={user_id}]')
