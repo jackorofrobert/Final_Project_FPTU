@@ -1,54 +1,37 @@
-from __future__ import annotations
-from dataclasses import dataclass
-from typing import List, Optional
-
-import numpy as np
-import pandas as pd
-from scipy.sparse import hstack, csr_matrix
+from sklearn.pipeline import Pipeline
 from sklearn.feature_extraction.text import TfidfVectorizer
+from xgboost import XGBClassifier
 
-from .text_cleaning import normalize_text, count_urls, has_url, exclamation_count, length_chars
 
-@dataclass
-class FeatureBuilder:
-    max_features: int = 50000
-    ngram_range: tuple = (1, 2)
-    min_df: int = 2
+def build_feature_pipeline():
+    """
+    Build feature extraction + classifier pipeline.
+    Returns a sklearn Pipeline object.
+    """
 
-    vectorizer: Optional[TfidfVectorizer] = None
-    use_numeric: bool = True
+    tfidf = TfidfVectorizer(
+        max_features=5000,
+        ngram_range=(1, 2),
+        lowercase=True,
+        stop_words="english"
+    )
 
-    def fit(self, texts: List[str]):
-        cleaned = [normalize_text(t) for t in texts]
-        self.vectorizer = TfidfVectorizer(
-            max_features=self.max_features,
-            ngram_range=self.ngram_range,
-            min_df=self.min_df,
-            lowercase=True
-        )
-        self.vectorizer.fit(cleaned)
-        return self
+    clf = XGBClassifier(
+        n_estimators=200,
+        max_depth=6,
+        learning_rate=0.1,
+        subsample=0.8,
+        colsample_bytree=0.8,
+        eval_metric="logloss",
+        use_label_encoder=False,
+        random_state=42
+    )
 
-    def _numeric_features(self, texts: List[str]) -> csr_matrix:
-        arr = np.array([
-            [has_url(t), count_urls(t), exclamation_count(t), length_chars(t)]
-            for t in texts
-        ], dtype=np.float32)
-        return csr_matrix(arr)
+    pipeline = Pipeline(
+        steps=[
+            ("features", tfidf),
+            ("clf", clf),
+        ]
+    )
 
-    def transform(self, texts: List[str]):
-        if self.vectorizer is None:
-            raise RuntimeError("FeatureBuilder not fitted.")
-
-        cleaned = [normalize_text(t) for t in texts]
-        X_text = self.vectorizer.transform(cleaned)
-
-        if not self.use_numeric:
-            return X_text
-
-        X_num = self._numeric_features(texts)
-        return hstack([X_text, X_num], format="csr")
-
-    def fit_transform(self, texts: List[str]):
-        self.fit(texts)
-        return self.transform(texts)
+    return pipeline

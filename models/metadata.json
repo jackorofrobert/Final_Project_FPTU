@@ -1,21 +1,8 @@
 {
-  "text_col": "email_text",
-  "label_col": "label",
-  "threshold": 0.5,
-  "f1": 1.0,
-  "roc_auc": 1.0,
-  "confusion_matrix": [
-    [
-      20000,
-      0
-    ],
-    [
-      0,
-      20000
-    ]
-  ],
-  "n_samples": 200000,
-  "n_train": 160000,
-  "n_test": 40000,
-  "notes": "Dataset memory implemented via data/history cache; training uses accumulated datasets."
+  "num_datasets": 2,
+  "num_samples": 400000,
+  "label_distribution": {
+    "1": 200000,
+    "0": 200000
+  }
 }

@@ -1,185 +1,218 @@
 from __future__ import annotations
-import argparse
-import json
-from pathlib import Path
 
-import numpy as np
+import argparse
+import hashlib
+from pathlib import Path
+import json
+
 import pandas as pd
 from joblib import dump
-
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import f1_score, roc_auc_score, confusion_matrix, classification_report
+from sklearn.metrics import classification_report
 
-from xgboost import XGBClassifier
-
-from .config import (
-    DATA_DIR_DEFAULT, INCOMING_DIR, HISTORY_DIR,
-    MODELS_DIR, RANDOM_SEED, DEFAULT_THRESHOLD
-)
-from .data_io import (
-    load_any, normalize_columns, auto_detect_columns, coerce_label,
-    list_dataset_files, cache_to_history
-)
-from .features import FeatureBuilder
+from .features import build_feature_pipeline
+from .label_utils import normalize_label
+from .data_io import load_any
 
 
-def load_all_from_folder(data_dir: Path) -> pd.DataFrame:
+# =========================
+# Utility functions
+# =========================
+
+def file_hash(path: Path) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        while True:
+            chunk = f.read(8192)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()[:16]
+
+
+def build_text_column(df: pd.DataFrame, preferred: str) -> str:
     """
-    Read all dataset files under data_dir EXCEPT history (to avoid double).
-    Also, ensure datasets are cached into history for "memory".
+    Ensure a text column exists.
+    Priority:
+    1. Preferred column (if exists)
+    2. subject + email_text
+    3. email_text
+    4. subject
     """
-    data_dir = data_dir.resolve()
-    incoming = (data_dir / "incoming").resolve()
-    history = (data_dir / "history").resolve()
+    cols = [c.lower() for c in df.columns]
 
-    incoming.mkdir(parents=True, exist_ok=True)
+    if preferred in cols:
+        return preferred
+
+    if "subject" in cols and "email_text" in cols:
+        print("[AUTO] Build text from subject + email_text")
+        df["__text__"] = (
+            df["subject"].astype(str) + " " + df["email_text"].astype(str)
+        )
+        return "__text__"
+
+    if "email_text" in cols:
+        print("[AUTO] Use email_text as text")
+        return "email_text"
+
+    if "subject" in cols:
+        print("[AUTO] Use subject as text")
+        return "subject"
+
+    raise KeyError(
+        f"No usable text columns found. Available columns: {list(df.columns)}"
+    )
+
+
+def resolve_label_column(df: pd.DataFrame, preferred: str) -> str:
+    cols = [c.lower() for c in df.columns]
+
+    if preferred in cols:
+        return preferred
+
+    common_label_cols = [
+        "label", "class", "target", "category", "type"
+    ]
+
+    for c in common_label_cols:
+        if c in cols:
+            print(f"[AUTO] Label column mapped -> '{c}'")
+            return c
+
+    raise KeyError(
+        f"No label column found. Available columns: {list(df.columns)}"
+    )
+
+
+def cache_incoming_datasets(incoming: Path, history: Path):
     history.mkdir(parents=True, exist_ok=True)
 
-    # 1) Files currently present (incoming + other places under data_dir excluding history)
-    current_files = list_dataset_files(data_dir, exclude_dirs=[history])
+    for f in incoming.iterdir():
+        if not f.is_file():
+            continue
+        if f.suffix.lower() not in [".csv", ".xlsx"]:
+            continue
 
-    # 2) Cache everything we can into history (so deletion of originals won't matter later)
-    cached_now = cache_to_history(current_files, history_dir=history)
+        h = file_hash(f)
+        cached = history / f"dataset_{h}.csv"
 
-    # 3) Load ALL history + current (but history already has copies, so just load history to be safe)
-    history_files = list_dataset_files(history, exclude_dirs=[])
+        if cached.exists():
+            print(f"[SKIP] Dataset already cached: {f.name}")
+            continue
 
-    if not history_files:
-        raise ValueError(
-            "No datasets found. Put datasets into data/incoming/ (csv/xlsx/json) then train again."
-        )
-
-    dfs = []
-    for f in history_files:
+        print(f"[CACHE] New dataset detected: {f.name}")
         df = load_any(f)
-        df = normalize_columns(df)
-        dfs.append(df)
-
-    return pd.concat(dfs, ignore_index=True)
+        df.to_csv(cached, index=False, encoding="utf-8")
+        print(f"        -> cached as {cached.name}")
 
 
-def build_model() -> XGBClassifier:
-    # Sensible defaults for text classification
-    return XGBClassifier(
-        n_estimators=400,
-        max_depth=6,
-        learning_rate=0.08,
-        subsample=0.9,
-        colsample_bytree=0.8,
-        reg_lambda=1.0,
-        reg_alpha=0.0,
-        min_child_weight=1.0,
-        objective="binary:logistic",
-        eval_metric="logloss",
-        n_jobs=0,
-        random_state=RANDOM_SEED
-    )
+def load_history_datasets(history: Path) -> pd.DataFrame:
+    frames = []
 
+    for f in history.glob("dataset_*.csv"):
+        print(f"[LOAD] {f.name}")
+        frames.append(pd.read_csv(f))
+
+    if not frames:
+        raise RuntimeError("No datasets found in history directory")
+
+    return pd.concat(frames, ignore_index=True)
+
+
+# =========================
+# Main training logic
+# =========================
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--data", default=None, help="Path to a single dataset file (csv/xlsx/json)")
-    ap.add_argument("--data-dir", default=str(DATA_DIR_DEFAULT), help="Folder containing datasets (default: data/)")
-    ap.add_argument("--text-col", default=None, help="Name of the text column (optional auto-detect)")
-    ap.add_argument("--label-col", default=None, help="Name of the label column (optional auto-detect)")
-    ap.add_argument("--threshold", type=float, default=DEFAULT_THRESHOLD, help="Decision threshold")
-    ap.add_argument("--model-out", default=str(MODELS_DIR / "model.joblib"), help="Output model path")
-    args = ap.parse_args()
+    parser = argparse.ArgumentParser(
+        description="Train phishing detection model with dataset memory"
+    )
+    parser.add_argument("--data-dir", required=True, help="Data directory")
+    parser.add_argument("--text-col", required=True, help="Preferred text column name")
+    parser.add_argument("--label-col", required=True, help="Preferred label column name")
+    parser.add_argument("--out", default="models", help="Output directory")
 
-    if args.data:
-        df = load_any(args.data)
-        df = normalize_columns(df)
-        # also cache that dataset into history for memory
-        data_dir = Path(args.data_dir)
-        HISTORY_DIR.mkdir(parents=True, exist_ok=True)
-        cache_to_history([Path(args.data)], history_dir=HISTORY_DIR)
-    else:
-        df = load_all_from_folder(Path(args.data_dir))
+    args = parser.parse_args()
 
-    text_col, label_col = auto_detect_columns(df, args.text_col, args.label_col)
+    data_dir = Path(args.data_dir)
+    incoming = data_dir / "incoming"
+    history = data_dir / "history"
 
-    X_text = df[text_col].astype(str).fillna("")
-    y = coerce_label(df[label_col])
+    if not incoming.exists():
+        raise FileNotFoundError("incoming folder not found")
 
-    # Drop empties
-    mask = X_text.str.strip().ne("") & y.notna()
-    X_text = X_text[mask].tolist()
-    y = y[mask].astype(int).tolist()
+    # 1. Cache all incoming datasets
+    cache_incoming_datasets(incoming, history)
 
-    if len(set(y)) < 2:
-        raise ValueError("Training data must contain both classes (0 and 1).")
+    # 2. Load all historical datasets
+    df = load_history_datasets(history)
 
+    # 3. Normalize column names
+    df.columns = [c.strip().lower() for c in df.columns]
+
+    # 4. Resolve / build text column
+    text_col = build_text_column(df, args.text_col.lower())
+
+    # 5. Resolve label column
+    label_col = resolve_label_column(df, args.label_col.lower())
+
+    df = df[[text_col, label_col]].dropna()
+
+    # 6. Normalize labels
+    df[label_col] = df[label_col].apply(normalize_label)
+
+    print("\nLabel distribution after normalization:")
+    print(df[label_col].value_counts())
+
+    X = df[text_col].astype(str)
+    y = df[label_col]
+
+    # 7. Train / test split
     X_train, X_test, y_train, y_test = train_test_split(
-        X_text, y, test_size=0.2, random_state=RANDOM_SEED, stratify=y
+        X, y, test_size=0.2, stratify=y, random_state=42
     )
 
-    feat = FeatureBuilder(max_features=50000, ngram_range=(1, 2), min_df=2, use_numeric=True)
-    Xtr = feat.fit_transform(X_train)
-    Xte = feat.transform(X_test)
+    # 8. Train model
+    pipeline = build_feature_pipeline()
+    pipeline.fit(X_train, y_train)
 
-    model = build_model()
+    # 9. Evaluate
+    y_pred = pipeline.predict(X_test)
+    print("\nClassification Report:")
+    print(classification_report(y_test, y_pred))
 
-    # handle imbalance
-    pos = sum(y_train)
-    neg = len(y_train) - pos
-    if pos > 0:
-        model.set_params(scale_pos_weight=max(1.0, neg / pos))
+    # 10. Save model
+    out_dir = Path(args.out)
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    model.fit(Xtr, np.array(y_train, dtype=int))
+    dump(
+        {
+            "model": pipeline,
+            "threshold": 0.5,
+            "label_mapping": {
+                "1": "phishing",
+                "0": "legitimate"
+            }
+        },
+        out_dir / "model.joblib"
+    )
 
-    proba = model.predict_proba(Xte)[:, 1]
-    pred = (proba >= args.threshold).astype(int)
+    with open(out_dir / "metadata.json", "w", encoding="utf-8") as f:
+        json.dump(
+            {
+                "num_datasets": len(list(history.glob("dataset_*.csv"))),
+                "num_samples": len(df),
+                "label_distribution": y.value_counts().to_dict(),
+            },
+            f,
+            indent=2,
+        )
 
-    f1 = float(f1_score(y_test, pred))
-    try:
-        auc = float(roc_auc_score(y_test, proba))
-    except Exception:
-        auc = None
-
-    cm = confusion_matrix(y_test, pred).tolist()
-    report = classification_report(y_test, pred, digits=4)
-
-    metadata = {
-        "text_col": text_col,
-        "label_col": label_col,
-        "threshold": args.threshold,
-        "f1": f1,
-        "roc_auc": auc,
-        "confusion_matrix": cm,
-        "n_samples": len(y),
-        "n_train": len(y_train),
-        "n_test": len(y_test),
-        "notes": "Dataset memory implemented via data/history cache; training uses accumulated datasets."
-    }
-
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    model_out = Path(args.model_out)
-    model_out.parent.mkdir(parents=True, exist_ok=True)
-
-    bundle = {
-        "feature_builder": feat,
-        "model": model,
-        "threshold": args.threshold,
-        "text_col": text_col,
-        "label_col": label_col
-    }
-
-    dump(bundle, model_out)
-
-    meta_path = model_out.parent / "metadata.json"
-    meta_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
-
-    print("=== TRAINING DONE ===")
-    print(f"Samples: {metadata['n_samples']} (train={metadata['n_train']}, test={metadata['n_test']})")
-    print(f"Detected columns: text_col='{text_col}', label_col='{label_col}'")
-    print(f"F1: {f1:.4f}")
-    if auc is not None:
-        print(f"ROC-AUC: {auc:.4f}")
-    print("Confusion Matrix:", cm)
-    print("\nClassification Report:\n", report)
-    print(f"\nSaved model: {model_out}")
-    print(f"Saved metadata: {meta_path}")
-    print("\nDataset memory: cached datasets are stored in data/history/ (do not delete if you want memory).")
+    print("\n==============================")
+    print(" Model training completed")
+    print("==============================")
+    print(f"Datasets used : {len(list(history.glob('dataset_*.csv')))}")
+    print(f"Samples used  : {len(df)}")
 
 
 if __name__ == "__main__":

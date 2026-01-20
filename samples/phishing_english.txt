@@ -1,0 +1,13 @@
+Subject: Urgent Account Verification Required
+
+Dear Customer,
+
+Your account has been temporarily suspended due to suspicious activity.
+To restore access, please verify your account immediately by clicking
+the link below.
+
+https://secure-account-verification-login.example.com
+
+Failure to verify within 24 hours will result in permanent suspension.
+
+Security Team
