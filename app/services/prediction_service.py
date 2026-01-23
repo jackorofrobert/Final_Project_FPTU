@@ -14,7 +14,7 @@ from app.utils.logger import get_logger
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 
 from src.text_cleaning import normalize_text
-from src.features import FeatureBuilder
+from src.features import build_feature_pipeline
 
 logger = get_logger(__name__)
 
@@ -22,7 +22,6 @@ class PredictionService:
     """Service for ML model predictions."""
     
     _model = None
-    _feature_builder = None
     _threshold = None
     
     @classmethod
@@ -33,7 +32,7 @@ class PredictionService:
             logger.info(f'Loading ML model from {model_path}')
             try:
                 pkg = load(model_path)
-                cls._feature_builder = pkg["feature_builder"]
+                # The model is a full Pipeline (vectorizer + classifier)
                 cls._model = pkg["model"]
                 cls._threshold = float(pkg.get("threshold", 0.5))
                 model_version = cls.get_model_version()
@@ -61,12 +60,9 @@ class PredictionService:
             normalized_text = normalize_text(email_text)
             logger.debug('Text normalized for prediction')
             
-            # Extract features
-            X = cls._feature_builder.transform([normalized_text])
-            logger.debug('Features extracted for prediction')
-            
-            # Predict
-            proba = float(cls._model.predict_proba(X)[:, 1][0])
+            # Predict using pipeline (handles feature extraction internally)
+            # Pipeline expects strict iterable of strings, so wrap in list
+            proba = float(cls._model.predict_proba([normalized_text])[:, 1][0])
             pred = int(proba >= cls._threshold)
             
             logger.debug(f'Prediction completed: prediction={pred} probability={proba:.4f} threshold={cls._threshold}')
