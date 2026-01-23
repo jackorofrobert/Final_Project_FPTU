@@ -1,189 +1,156 @@
 # Phishing Email Detection System (AI-based)
 
-## 1. Overview
+## 1. Introduction
 
-This project implements an AI-based Phishing Email Detection System using supervised machine learning.
-The system is designed with a strong emphasis on **system engineering and dataset management** rather than
-model accuracy alone.
+This project implements an **AI-based Phishing Email Detection System** with a strong focus on system engineering rather than model accuracy alone.
 
-A key contribution of this system is the **Dataset Memory architecture**, which allows the model to be trained
-on multiple heterogeneous datasets without manual file merging and without losing knowledge from previously
-used datasets.
+A key contribution of this system is the **Dataset Memory architecture**, which allows the model to be trained on multiple heterogeneous datasets without manual file merging and without losing knowledge from previously used datasets.
 
-The system operates entirely via **command-line interface (PowerShell / Terminal)** and does not depend on
-external tools or services.
+The system is suitable for:
 
----
-
-## 2. Key Features
-
-- Automatic loading of **all dataset files in a directory**
-- Support for **CSV and Excel** datasets
-- **Dataset memory** through historical dataset retention (system-level memory)
-- Retraining on accumulated datasets (old + new)
-- Command-line prediction (text or file-based)
-- Probabilistic phishing risk output
-- Automatic detection and normalization of text and label columns
-- Robust handling of real-world dataset inconsistencies
+- Final-year academic projects
+- Security Operations Center (SOC) demonstrations
+- Research and experimentation in email security
 
 ---
 
-## 3. Project Structure
+## 2. System Objectives
+
+- Detect phishing and legitimate emails using Machine Learning
+- Support training from multiple datasets with different formats
+- Handle real-world dataset inconsistencies (column names, labels, structure)
+- Allow full training and prediction via command line (PowerShell / Terminal)
+- Provide a flexible foundation for future extensions
+
+---
+
+## 3. Overall Architecture
+
+### 3.1 Dataset Memory Architecture
+
+The model itself does not remember previous data. Dataset persistence is handled at the system level.
+
+Workflow:
+
+1. New datasets are placed into data/incoming/
+2. Each dataset is hashed and cached into data/history/
+3. During training, all cached datasets are loaded
+4. The model is retrained using the complete dataset history
+
+Benefits:
+
+- No manual dataset merging
+- No data loss across training runs
+- Reproducible and extensible training pipeline
+
+---
+
+## 4. Project Structure
 
 ```
 Final_Project_FPTU/
 ├── src/
 │   ├── __init__.py
-│   ├── train.py          # Training pipeline with dataset memory
-│   ├── predict.py        # Phishing prediction module
-│   ├── features.py       # TF-IDF + XGBoost pipeline
-│   ├── data_io.py        # CSV / Excel loader
-│   ├── label_utils.py    # Label normalization
-│   └── text_cleaning.py  # Text preprocessing
+│   ├── train.py
+│   ├── predict.py
+│   ├── features.py
+│   ├── data_io.py
+│   ├── label_utils.py
+│   └── text_cleaning.py
+│
+├── app/
+│   └── main.py
 │
 ├── data/
-│   ├── incoming/         # New datasets (user input)
-│   ├── history/          # Cached datasets (dataset memory)
-│   └── runtime_cache/    # Reserved for future use
+│   ├── incoming/
+│   ├── history/
+│   └── runtime_cache/
 │
 ├── models/
 │   ├── model.joblib
 │   └── metadata.json
 │
-├── samples/              # Sample email files for testing
+├── samples/
+├── requirements.txt
 ├── README.md
 └── README_VI.md
 ```
 
 ---
 
-## 4. Dataset Handling Strategy
+## 5. Dataset Handling and Preprocessing
 
-### 4.1 Automatic Dataset Ingestion
+### 5.1 Supported Dataset Formats
 
-The system automatically scans the `data/incoming/` directory and loads **all compatible dataset files**
-without requiring manual file merging.
+- CSV (.csv)
+- Excel (.xlsx)
 
-Supported formats:
+### 5.2 Automatic Text Column Resolution
 
-- CSV (`.csv`)
-- Excel (`.xlsx`)
+Priority:
 
-Datasets are merged **in memory only during training**, ensuring clean data management.
+1. User-specified column (--text-col)
+2. body
+3. email_text
+4. subject
+5. Synthesized text from subject + email_text
 
----
+### 5.3 Label Normalization
 
-### 4.2 Dataset Memory (Historical Knowledge Retention)
-
-The model itself does **not** memorize past datasets.
-Instead, dataset persistence is handled at the **system level** via the `data/history/` directory.
-
-Training behavior:
-
-1. New datasets are cached into `data/history/`
-2. All historical datasets are loaded during training
-3. The model is retrained from scratch using accumulated data
-
-This design follows correct machine learning principles and aligns with real-world **MLOps practices**.
+- phishing, spam, scam → 1
+- legitimate, ham, normal → 0
+- numeric labels are preserved
 
 ---
 
-## 5. Training the Model
-
-### 5.1 Train Using All Datasets in a Folder
+## 6. Model Training
 
 ```bash
 python -m src.train --data-dir data --text-col body --label-col label
 ```
 
-### 5.2 Force Text and Label Columns (For Unusual Datasets)
-
-```bash
-python -m src.train --data-dir data --text-col email_text --label-col is_phishing
-```
-
 ---
 
-## 6. Training Outputs
-
-After training, the following artifacts are generated:
-
-```
-models/
-├── model.joblib
-└── metadata.json
-```
-
-The metadata file includes:
-
-- Number of datasets used
-- Number of samples
-- Label distribution
-- Evaluation metrics
-
----
-
-## 7. Command-Line Prediction Demo
-
-### Predict Phishing Email
+## 7. Prediction
 
 ```bash
-python -m src.predict --text "Urgent: Verify your bank account immediately"
-```
-
-### Predict Benign Email
-
-```bash
-python -m src.predict --text "Team meeting at 10 AM tomorrow"
-```
-
-### Predict from Email File
-
-```bash
+python -m src.predict --text "Verify your account now"
 python -m src.predict --file samples/phishing.txt
 ```
 
-### JSON Output (Integration Mode)
+---
+
+## 8. Machine Learning Model
+
+- TF-IDF feature extraction
+- XGBoost classifier
+
+---
+
+## 9. Environment Setup
 
 ```bash
-python -m src.predict --file samples/phishing.txt --json
+pip install -r requirements.txt
 ```
 
 ---
 
-## 8. Model Architecture
+## 10. Running the Application
 
-- Text preprocessing (normalization, cleaning)
-- TF-IDF feature extraction (unigrams and bigrams)
-- XGBoost classifier
-
-**Reasons for choosing XGBoost:**
-
-- Strong performance on sparse text features
-- Fast training and inference
-- Robust against overfitting
-- Well-suited for academic projects
+```bash
+python -m app
+```
 
 ---
 
-## 9. System Limitations
+## 11. System Limitations
 
-- Batch learning only (no online learning)
-- Requires retraining for new data
+- Batch learning only
 - Marketing emails may cause false positives
-- Datasets are primarily in English
-
-These limitations are documented and acceptable for academic purposes.
+- Primarily English datasets
 
 ---
 
-## 10. Conclusion
+## 12. Conclusion
 
-This system demonstrates a practical and extensible phishing email detection pipeline with:
-
-- Flexible dataset handling
-- Historical knowledge retention
-- Clean command-line usability
-- Strong alignment with real-world ML engineering practices
-
-The project is well-suited for **final-year academic evaluation** and real-world demonstrations.
+This system demonstrates a robust and extensible phishing email detection pipeline with strong emphasis on dataset engineering.
