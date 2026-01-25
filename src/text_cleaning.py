@@ -89,3 +89,33 @@ def extract_sender_domain(text: str) -> str:
     
     return "unknown"
 
+
+def extract_link_domains(text: str) -> list:
+    """
+    Extract unique domains from all URLs in text.
+    
+    Args:
+        text: Raw email text
+        
+    Returns:
+        List of unique domain strings found in URLs
+    """
+    if text is None:
+        return []
+    
+    urls = _url_re.findall(str(text))
+    domains = []
+    
+    for url in urls:
+        # Parse domain from URL - handle both http:// and www. prefixes
+        match = re.search(r'(?:https?://)?(?:www\.)?([^/\s?&#]+)', url)
+        if match:
+            domain = match.group(1).lower()
+            # Clean up any port numbers
+            domain = domain.split(':')[0]
+            if domain and domain not in domains:
+                domains.append(domain)
+    
+    return domains
+
+

@@ -124,6 +124,34 @@ SUSPICIOUS_DOMAIN_PATTERNS = [
 ]
 
 
+def is_trusted_domain(domain: str, trusted_list: list = None) -> bool:
+    """
+    Check if domain or its parent domain is in trusted list.
+    
+    Args:
+        domain: Domain to check
+        trusted_list: List of trusted domains (uses config if None)
+        
+    Returns:
+        True if domain is trusted
+    """
+    if not domain or domain == "unknown":
+        return False
+    
+    if trusted_list is None:
+        from .config import TRUSTED_DOMAINS
+        trusted_list = TRUSTED_DOMAINS
+    
+    domain_lower = domain.lower()
+    
+    for trusted in trusted_list:
+        # Exact match or subdomain match
+        if domain_lower == trusted or domain_lower.endswith('.' + trusted):
+            return True
+    
+    return False
+
+
 def calculate_domain_risk(domain: str) -> float:
     """
     Calculate risk score for sender domain.
@@ -138,6 +166,10 @@ def calculate_domain_risk(domain: str) -> float:
         return 0.3  # Unknown domain has moderate risk
     
     domain_lower = domain.lower()
+    
+    # Trusted domains have zero risk
+    if is_trusted_domain(domain_lower):
+        return 0.0
     
     # Check for suspicious patterns
     for pattern in SUSPICIOUS_DOMAIN_PATTERNS:
@@ -154,16 +186,31 @@ def calculate_domain_risk(domain: str) -> float:
     return 0.1  # Low risk
 
 
-def calculate_links_risk(links_count: int) -> float:
+def calculate_links_risk(links_count: int, link_domains: list = None) -> float:
     """
     Calculate risk score based on number of links.
+    If most links point to trusted domains, risk is reduced.
     
     Args:
         links_count: Number of links in email
+        link_domains: List of domains from URLs (optional)
         
     Returns:
         Risk score between 0.0 and 1.0
     """
+    # If we have domain info, check if most are trusted
+    if link_domains and len(link_domains) > 0:
+        trusted_count = sum(1 for d in link_domains if is_trusted_domain(d))
+        trust_ratio = trusted_count / len(link_domains)
+        
+        # If 80%+ of links are to trusted domains, minimal risk
+        if trust_ratio >= 0.8:
+            return 0.1
+        # If 50%+ trusted, reduce risk
+        elif trust_ratio >= 0.5:
+            return 0.3
+    
+    # Standard risk calculation based on count
     if links_count == 0:
         return 0.0
     elif links_count == 1:
@@ -181,7 +228,8 @@ def calculate_ensemble_score(
     urgent_keywords: int = 0,
     links_count: int = 0,
     sender_domain: str = "unknown",
-    has_attachment: int = 0
+    has_attachment: int = 0,
+    link_domains: list = None
 ) -> float:
     """
     Calculate ensemble score combining model probability with feature-based risk scores.
@@ -198,13 +246,14 @@ def calculate_ensemble_score(
         links_count: Number of links
         sender_domain: Sender's domain
         has_attachment: 0 or 1 (currently not weighted)
+        link_domains: List of domains extracted from URLs (for trusted check)
         
     Returns:
         Ensemble score between 0.0 and 1.0
     """
     # Feature-based risk scores
     urgent_risk = float(urgent_keywords)  # 0 or 1
-    links_risk = calculate_links_risk(links_count)
+    links_risk = calculate_links_risk(links_count, link_domains)
     domain_risk = calculate_domain_risk(sender_domain)
     
     # Weighted combination
@@ -214,6 +263,24 @@ def calculate_ensemble_score(
         links_risk * 0.15 +        # Links risk weight
         domain_risk * 0.10         # Domain risk weight
     )
+    
+    # ========== TRUSTED EMAIL BONUS ==========
+    # If both sender domain AND most links are trusted, apply a bonus reduction
+    # This helps reduce false positives for legitimate emails from trusted sources
+    sender_is_trusted = is_trusted_domain(sender_domain)
+    
+    # Check if 80%+ of links are to trusted domains
+    links_are_trusted = False
+    if link_domains and len(link_domains) > 0:
+        trusted_count = sum(1 for d in link_domains if is_trusted_domain(d))
+        trust_ratio = trusted_count / len(link_domains)
+        links_are_trusted = trust_ratio >= 0.8
+    
+    # Apply trust bonus: reduce score by 40% if fully trusted
+    if sender_is_trusted and links_are_trusted:
+        ensemble_score *= 0.6  # 40% reduction
+    elif sender_is_trusted or links_are_trusted:
+        ensemble_score *= 0.8  # 20% reduction if partially trusted
     
     # Clamp to [0, 1]
     return max(0.0, min(1.0, ensemble_score))

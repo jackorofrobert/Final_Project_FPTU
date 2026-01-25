@@ -19,3 +19,18 @@ TEXT_COL_CANDIDATES = [
 LABEL_COL_CANDIDATES = [
     "label", "class", "target", "is_phishing", "phishing", "spam", "y"
 ]
+
+# Trusted domains - emails from these sources are less likely to be phishing
+TRUSTED_DOMAINS = [
+    # Job platforms
+    'linkedin.com', 'indeed.com', 'glassdoor.com', 'vietnamworks.com',
+    # Big tech
+    'google.com', 'gmail.com', 'microsoft.com', 'outlook.com',
+    'amazon.com', 'apple.com', 'facebook.com', 'meta.com',
+    # Dev/Social
+    'github.com', 'twitter.com', 'x.com', 'slack.com',
+    # E-commerce
+    'shopee.vn', 'lazada.vn', 'tiki.vn',
+    # Payment
+    'paypal.com', 'stripe.com',
+]

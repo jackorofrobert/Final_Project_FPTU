@@ -226,13 +226,18 @@ def main():
     # Predict
     proba_phishing = float(model.predict_proba(X)[0][1])
     
+    # Extract link domains for trusted check
+    from .text_cleaning import extract_link_domains
+    link_domains = extract_link_domains(raw_text)
+    
     # Calculate ensemble score
     ensemble_score = calculate_ensemble_score(
         model_proba=proba_phishing,
         urgent_keywords=int(X['urgent_keywords'].iloc[0]),
         links_count=int(X['links_count'].iloc[0]),
         sender_domain=X['sender_domain'].iloc[0],
-        has_attachment=int(X['has_attachment'].iloc[0])
+        has_attachment=int(X['has_attachment'].iloc[0]),
+        link_domains=link_domains
     )
     
     # Use ensemble_score for final prediction
@@ -274,6 +279,55 @@ def main():
     print(f"  - Has attachment : {int(X['has_attachment'].iloc[0])}")
     print(f"  - Urgent keywords: {int(X['urgent_keywords'].iloc[0])}")
     print(f"  - Sender domain  : {X['sender_domain'].iloc[0]}")
+    
+    # ========== DETAILED SCORE BREAKDOWN ==========
+    from .features import calculate_links_risk, calculate_domain_risk, is_trusted_domain
+    
+    links_risk = calculate_links_risk(int(X['links_count'].iloc[0]), link_domains)
+    domain_risk = calculate_domain_risk(X['sender_domain'].iloc[0])
+    urgent_risk = float(X['urgent_keywords'].iloc[0])
+    
+    print("-" * 60)
+    print("📊 CHI TIẾT TÍNH ĐIỂM (Score Breakdown):")
+    print("-" * 60)
+    print("Công thức: Ensemble = Model×60% + Urgent×15% + Links×15% + Domain×10%")
+    print()
+    print(f"  1. Model Probability : {proba_phishing:.4f} × 0.60 = {proba_phishing * 0.60:.4f}")
+    print(f"  2. Urgent Keywords   : {urgent_risk:.4f} × 0.15 = {urgent_risk * 0.15:.4f}")
+    print(f"  3. Links Risk        : {links_risk:.4f} × 0.15 = {links_risk * 0.15:.4f}")
+    print(f"  4. Domain Risk       : {domain_risk:.4f} × 0.10 = {domain_risk * 0.10:.4f}")
+    print("  " + "-" * 40)
+    base_score = proba_phishing * 0.60 + urgent_risk * 0.15 + links_risk * 0.15 + domain_risk * 0.10
+    print(f"  → Base Score (trước bonus): {base_score:.4f} ({base_score * 100:.2f}%)")
+    
+    # Show trust bonus calculation
+    sender_is_trusted = is_trusted_domain(X['sender_domain'].iloc[0])
+    links_are_trusted = False
+    if link_domains and len(link_domains) > 0:
+        trusted_count = sum(1 for d in link_domains if is_trusted_domain(d))
+        trust_ratio = trusted_count / len(link_domains)
+        links_are_trusted = trust_ratio >= 0.8
+    
+    print()
+    print("🛡️ TRUSTED EMAIL BONUS:")
+    print(f"  - Sender domain trusted? : {'✅ Có' if sender_is_trusted else '❌ Không'}")
+    print(f"  - Links 80%+ trusted?    : {'✅ Có' if links_are_trusted else '❌ Không'}")
+    if link_domains:
+        trusted_count = sum(1 for d in link_domains if is_trusted_domain(d))
+        print(f"    ({trusted_count}/{len(link_domains)} domains trusted = {100*trusted_count/len(link_domains):.1f}%)")
+    
+    if sender_is_trusted and links_are_trusted:
+        print(f"  → Áp dụng: Giảm 40% (×0.6)")
+        print(f"  → Final Score: {base_score:.4f} × 0.6 = {base_score * 0.6:.4f} ({base_score * 0.6 * 100:.2f}%)")
+    elif sender_is_trusted or links_are_trusted:
+        print(f"  → Áp dụng: Giảm 20% (×0.8)")
+        print(f"  → Final Score: {base_score:.4f} × 0.8 = {base_score * 0.8:.4f} ({base_score * 0.8 * 100:.2f}%)")
+    else:
+        print(f"  → Không áp dụng bonus")
+        print(f"  → Final Score: {base_score:.4f} ({base_score * 100:.2f}%)")
+    
+    print()
+    print(f"📌 Kết luận: {ensemble_score * 100:.2f}% {'≥' if ensemble_score >= threshold else '<'} {threshold * 100:.0f}% → {label_str}")
     
     # Show suspicious segments
     if suspicious_segments:
