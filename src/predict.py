@@ -4,9 +4,11 @@ import argparse
 import json
 from pathlib import Path
 
+import pandas as pd
 from joblib import load
 
-from .text_cleaning import normalize_text
+from .text_cleaning import normalize_text, count_urls, detect_urgent_keywords, extract_sender_domain
+from .features import prepare_features, calculate_ensemble_score
 
 
 def read_file(path: Path) -> str:
@@ -18,6 +20,131 @@ def read_file(path: Path) -> str:
         return path.read_text(encoding="utf-8", errors="ignore")
     except Exception as e:
         raise RuntimeError(f"Cannot read file: {path}") from e
+
+
+def extract_features_from_text(
+    raw_text: str,
+    has_attachment: int = None,
+    links_count: int = None,
+    sender_domain: str = None,
+    urgent_keywords: int = None
+) -> pd.DataFrame:
+    """
+    Extract features from raw email text.
+    If features are not provided, auto-extract from text.
+    
+    Args:
+        raw_text: Raw email content
+        has_attachment: Override for attachment flag
+        links_count: Override for link count
+        sender_domain: Override for sender domain
+        urgent_keywords: Override for urgent flag
+        
+    Returns:
+        DataFrame with features ready for model
+    """
+    normalized_text = normalize_text(raw_text)
+    
+    # Auto-extract if not provided
+    if links_count is None:
+        links_count = count_urls(raw_text)
+    
+    if urgent_keywords is None:
+        urgent_keywords = detect_urgent_keywords(raw_text)
+    
+    if sender_domain is None:
+        sender_domain = extract_sender_domain(raw_text)
+    
+    if has_attachment is None:
+        has_attachment = 0  # Cannot detect from text
+    
+    return prepare_features(
+        text=normalized_text,
+        has_attachment=has_attachment,
+        links_count=links_count,
+        sender_domain=sender_domain,
+        urgent_keywords=urgent_keywords
+    )
+
+
+def analyze_suspicious_segments(raw_text: str, model, threshold: float = 0.5) -> list:
+    """
+    Analyze email text and find suspicious segments.
+    
+    Args:
+        raw_text: Raw email text
+        model: Trained model pipeline
+        threshold: Score threshold for flagging as suspicious
+        
+    Returns:
+        List of dicts with 'text' and 'score' for suspicious segments
+    """
+    import re
+    from .text_cleaning import URGENT_KEYWORDS
+    
+    suspicious_segments = []
+    
+    # Split into sentences/lines
+    lines = re.split(r'[.\n\r]+', raw_text)
+    lines = [line.strip() for line in lines if line.strip() and len(line.strip()) > 10]
+    
+    for line in lines:
+        # Check for urgent keywords
+        line_lower = line.lower()
+        found_keywords = []
+        for keyword in URGENT_KEYWORDS:
+            if keyword in line_lower:
+                found_keywords.append(keyword)
+        
+        # Check for URLs
+        url_pattern = r'(https?://\S+|www\.\S+)'
+        urls = re.findall(url_pattern, line, re.IGNORECASE)
+        
+        # Calculate risk score for this segment
+        risk_score = 0.0
+        reasons = []
+        
+        # Urgent keywords contribute to risk
+        if found_keywords:
+            risk_score += 0.3 * min(len(found_keywords), 3)  # Max 0.9
+            reasons.append(f"Từ khóa khẩn cấp: {', '.join(found_keywords[:3])}")
+        
+        # URLs contribute to risk
+        if urls:
+            risk_score += 0.2 * min(len(urls), 2)  # Max 0.4
+            reasons.append(f"Chứa {len(urls)} link")
+        
+        # Suspicious patterns
+        suspicious_patterns = [
+            (r'click\s*(here|this|now)', 'Yêu cầu click'),
+            (r'verify\s*(your|account)', 'Yêu cầu xác minh'),
+            (r'(password|credit\s*card|ssn|bank)', 'Yêu cầu thông tin nhạy cảm'),
+            (r'(suspended|locked|disabled|expired)', 'Cảnh báo tài khoản'),
+            (r'(winner|prize|reward|gift|free)', 'Hứa hẹn phần thưởng'),
+            (r'(\$\d+|money|cash)', 'Đề cập tiền bạc'),
+        ]
+        
+        for pattern, reason in suspicious_patterns:
+            if re.search(pattern, line_lower):
+                risk_score += 0.15
+                if reason not in reasons:
+                    reasons.append(reason)
+        
+        # Cap at 1.0
+        risk_score = min(risk_score, 1.0)
+        
+        # Only include if suspicious enough
+        if risk_score >= 0.2 or found_keywords or urls:
+            suspicious_segments.append({
+                'text': line[:150] + ('...' if len(line) > 150 else ''),
+                'score': round(risk_score * 100, 1),
+                'reasons': reasons
+            })
+    
+    # Sort by score descending
+    suspicious_segments.sort(key=lambda x: x['score'], reverse=True)
+    
+    return suspicious_segments[:10]  # Top 10 most suspicious
 
 
 def main():
@@ -36,6 +163,27 @@ def main():
     parser.add_argument(
         "--file",
         help="Path to email file (.txt, .eml, .html)",
+    )
+    parser.add_argument(
+        "--has-attachment",
+        type=int,
+        choices=[0, 1],
+        help="Override: email has attachment (0 or 1)",
+    )
+    parser.add_argument(
+        "--links-count",
+        type=int,
+        help="Override: number of links in email",
+    )
+    parser.add_argument(
+        "--sender-domain",
+        help="Override: sender's email domain",
+    )
+    parser.add_argument(
+        "--urgent-keywords",
+        type=int,
+        choices=[0, 1],
+        help="Override: contains urgent keywords (0 or 1)",
     )
     parser.add_argument(
         "--json",
@@ -66,39 +214,91 @@ def main():
     model = pkg["model"]
     threshold = float(pkg.get("threshold", 0.5))
 
-    # Preprocess & vectorize
-    cleaned_text = normalize_text(raw_text)
-    X = model.named_steps["features"].transform([cleaned_text])
+    # Extract features
+    X = extract_features_from_text(
+        raw_text=raw_text,
+        has_attachment=args.has_attachment,
+        links_count=args.links_count,
+        sender_domain=args.sender_domain,
+        urgent_keywords=args.urgent_keywords
+    )
 
     # Predict
-    proba_phishing = float(model.named_steps["clf"].predict_proba(X)[0][1])
-    pred = int(proba_phishing >= threshold)
-
+    proba_phishing = float(model.predict_proba(X)[0][1])
+    
+    # Calculate ensemble score
+    ensemble_score = calculate_ensemble_score(
+        model_proba=proba_phishing,
+        urgent_keywords=int(X['urgent_keywords'].iloc[0]),
+        links_count=int(X['links_count'].iloc[0]),
+        sender_domain=X['sender_domain'].iloc[0],
+        has_attachment=int(X['has_attachment'].iloc[0])
+    )
+    
+    # Use ensemble_score for final prediction
+    pred = int(ensemble_score >= threshold)
     label_str = "PHISHING" if pred == 1 else "LEGITIMATE"
+
+    # Analyze suspicious segments
+    suspicious_segments = analyze_suspicious_segments(raw_text, model, threshold)
 
     # Output JSON (for tool / API usage)
     if args.json:
-        print(
-            json.dumps(
-                {
-                    "prediction": label_str,
-                    "proba_phishing": round(proba_phishing, 6),
-                    "threshold": threshold,
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        result = {
+            "prediction": label_str,
+            "proba_phishing": round(proba_phishing, 6),
+            "ensemble_score": round(ensemble_score, 6),
+            "threshold": threshold,
+            "features": {
+                "links_count": int(X['links_count'].iloc[0]),
+                "has_attachment": int(X['has_attachment'].iloc[0]),
+                "urgent_keywords": int(X['urgent_keywords'].iloc[0]),
+                "sender_domain": X['sender_domain'].iloc[0]
+            },
+            "suspicious_segments": suspicious_segments
+        }
+        print(json.dumps(result, ensure_ascii=False, indent=2))
         return
 
     # Output CLI (human readable)
-    print("=" * 36)
+    print("=" * 60)
     print(" Email Classification Result")
-    print("-" * 36)
-    print(f"Prediction : {label_str}")
-    print(f"Probability: {proba_phishing * 100:.2f} %")
-    print(f"Threshold  : {threshold}")
-    print("=" * 36)
+    print("-" * 60)
+    print(f"Prediction     : {label_str}")
+    print(f"Model Prob     : {proba_phishing * 100:.2f} %")
+    print(f"Ensemble Score : {ensemble_score * 100:.2f} %")
+    print(f"Threshold      : {threshold}")
+    print("-" * 60)
+    print("Extracted Features:")
+    print(f"  - Links count    : {int(X['links_count'].iloc[0])}")
+    print(f"  - Has attachment : {int(X['has_attachment'].iloc[0])}")
+    print(f"  - Urgent keywords: {int(X['urgent_keywords'].iloc[0])}")
+    print(f"  - Sender domain  : {X['sender_domain'].iloc[0]}")
+    
+    # Show suspicious segments
+    if suspicious_segments:
+        print("-" * 60)
+        print("Suspicious Text Segments:")
+        print("-" * 60)
+        for i, seg in enumerate(suspicious_segments, 1):
+            score = seg['score']
+            # Color coding based on score
+            if score >= 60:
+                level = "🔴 HIGH"
+            elif score >= 30:
+                level = "🟠 MEDIUM"
+            else:
+                level = "🟡 LOW"
+            
+            print(f"\n[{i}] {level} - Score: {score}%")
+            print(f"    Text: \"{seg['text']}\"")
+            if seg['reasons']:
+                print(f"    Reasons: {', '.join(seg['reasons'])}")
+    else:
+        print("-" * 60)
+        print("No suspicious text segments detected.")
+    
+    print("=" * 60)
 
 
 if __name__ == "__main__":

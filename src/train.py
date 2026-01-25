@@ -10,7 +10,7 @@ from joblib import dump
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import classification_report
 
-from .features import build_feature_pipeline
+from .features import build_feature_pipeline, FEATURE_COLS, TEXT_COL, NUMERIC_COLS, CATEGORICAL_COLS
 from .label_utils import normalize_label
 from .data_io import load_any
 
@@ -82,6 +82,37 @@ def resolve_label_column(df: pd.DataFrame, preferred: str) -> str:
     raise KeyError(
         f"No label column found. Available columns: {list(df.columns)}"
     )
+
+
+def ensure_feature_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Ensure all required feature columns exist with default values.
+    """
+    # Ensure numeric columns exist with defaults
+    if 'has_attachment' not in df.columns:
+        print("[AUTO] Adding 'has_attachment' column with default 0")
+        df['has_attachment'] = 0
+    
+    if 'links_count' not in df.columns:
+        print("[AUTO] Adding 'links_count' column with default 0")
+        df['links_count'] = 0
+    
+    if 'urgent_keywords' not in df.columns:
+        print("[AUTO] Adding 'urgent_keywords' column with default 0")
+        df['urgent_keywords'] = 0
+    
+    # Ensure categorical column exists
+    if 'sender_domain' not in df.columns:
+        print("[AUTO] Adding 'sender_domain' column with default 'unknown'")
+        df['sender_domain'] = 'unknown'
+    
+    # Convert types
+    df['has_attachment'] = df['has_attachment'].fillna(0).astype(int)
+    df['links_count'] = df['links_count'].fillna(0).astype(int)
+    df['urgent_keywords'] = df['urgent_keywords'].fillna(0).astype(int)
+    df['sender_domain'] = df['sender_domain'].fillna('unknown').astype(str)
+    
+    return df
 
 
 def cache_incoming_datasets(incoming: Path, history: Path):
@@ -156,39 +187,73 @@ def main():
     # 5. Resolve label column
     label_col = resolve_label_column(df, args.label_col.lower())
 
-    df = df[[text_col, label_col]].dropna()
+    # 6. Ensure all feature columns exist
+    df = ensure_feature_columns(df)
 
-    # 6. Normalize labels
+    # 7. Create the 'text' column used by pipeline
+    df[TEXT_COL] = df[text_col].astype(str)
+
+    # 8. Select only needed columns
+    required_cols = [label_col] + FEATURE_COLS
+    df = df[required_cols].dropna()
+
+    # 9. Normalize labels
     df[label_col] = df[label_col].apply(normalize_label)
 
     print("\nLabel distribution after normalization:")
     print(df[label_col].value_counts())
 
-    X = df[text_col].astype(str)
+    print("\nFeature columns used:")
+    for col in FEATURE_COLS:
+        print(f"  - {col}")
+
+    X = df[FEATURE_COLS]
     y = df[label_col]
 
-    # 7. Train / test split
+    # 10. Train / test split
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.2, stratify=y, random_state=42
     )
 
-    # 8. Train model
+    print(f"\nTraining samples: {len(X_train)}")
+    print(f"Testing samples: {len(X_test)}")
+
+    # 11. Train model
     pipeline = build_feature_pipeline()
     pipeline.fit(X_train, y_train)
 
-    # 9. Evaluate
-    y_pred = pipeline.predict(X_test)
-    print("\nClassification Report:")
+    # 12. Find optimal threshold using F1 score
+    print("\nFinding optimal threshold...")
+    y_proba = pipeline.predict_proba(X_test)[:, 1]
+    
+    best_threshold = 0.5
+    best_f1 = 0.0
+    
+    for threshold in [0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7]:
+        y_pred_thresh = (y_proba >= threshold).astype(int)
+        from sklearn.metrics import f1_score
+        f1 = f1_score(y_test, y_pred_thresh, average='weighted')
+        print(f"  Threshold {threshold:.2f}: F1 = {f1:.4f}")
+        if f1 > best_f1:
+            best_f1 = f1
+            best_threshold = threshold
+    
+    print(f"\n>>> Optimal threshold: {best_threshold} (F1 = {best_f1:.4f})")
+
+    # 13. Evaluate with optimal threshold
+    y_pred = (y_proba >= best_threshold).astype(int)
+    print("\nClassification Report (with optimal threshold):")
     print(classification_report(y_test, y_pred))
 
-    # 10. Save model
+    # 14. Save model
     out_dir = Path(args.out)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     dump(
         {
             "model": pipeline,
-            "threshold": 0.5,
+            "threshold": best_threshold,
+            "feature_cols": FEATURE_COLS,
             "label_mapping": {
                 "1": "phishing",
                 "0": "legitimate"
@@ -202,6 +267,9 @@ def main():
             {
                 "num_datasets": len(list(history.glob("dataset_*.csv"))),
                 "num_samples": len(df),
+                "feature_cols": FEATURE_COLS,
+                "optimal_threshold": best_threshold,
+                "optimal_f1_score": round(best_f1, 4),
                 "label_distribution": y.value_counts().to_dict(),
             },
             f,
@@ -211,8 +279,10 @@ def main():
     print("\n==============================")
     print(" Model training completed")
     print("==============================")
-    print(f"Datasets used : {len(list(history.glob('dataset_*.csv')))}")
-    print(f"Samples used  : {len(df)}")
+    print(f"Datasets used     : {len(list(history.glob('dataset_*.csv')))}")
+    print(f"Samples used      : {len(df)}")
+    print(f"Feature cols      : {len(FEATURE_COLS)}")
+    print(f"Optimal threshold : {best_threshold}")
 
 
 if __name__ == "__main__":

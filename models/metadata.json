@@ -1,6 +1,15 @@
 {
   "num_datasets": 2,
   "num_samples": 400000,
+  "feature_cols": [
+    "text",
+    "has_attachment",
+    "links_count",
+    "urgent_keywords",
+    "sender_domain"
+  ],
+  "optimal_threshold": 0.3,
+  "optimal_f1_score": 1.0,
   "label_distribution": {
     "1": 200000,
     "0": 200000

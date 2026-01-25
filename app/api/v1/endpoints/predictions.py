@@ -94,8 +94,15 @@ async def analyze(
         
         logger.info(f'Prediction requested (manual input) [user_id={user_id}] [text_length={len(email_text)}] [request_id={request_id}]')
         
-        # Get prediction
-        result = PredictionService.predict(email_text)
+        # Get prediction with additional features
+        result = PredictionService.predict(
+            email_text=email_text,
+            subject=prediction_request.subject,
+            has_attachment=prediction_request.has_attachment,
+            links_count=prediction_request.links_count,
+            sender_domain=prediction_request.sender_domain,
+            urgent_keywords=prediction_request.urgent_keywords
+        )
         
         logger.info(
             f'Prediction completed: prediction={result["prediction"]} '
@@ -130,9 +137,11 @@ async def analyze(
         return success_response(data={
             'prediction': result['prediction'],
             'probability': result['probability'],
+            'ensemble_score': result.get('ensemble_score', result['probability']),
             'threshold': result['threshold'],
             'email_id': email_id,
-            'is_phishing': result['prediction'] == 1
+            'is_phishing': result['prediction'] == 1,
+            'features': result.get('features', {})
         }, message='Email analyzed successfully')
     except Exception as e:
         logger.error(f'Error analyzing email [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
