@@ -136,11 +136,14 @@ async def analyze(
         
         return success_response(data={
             'prediction': result['prediction'],
+            'classification': result['classification'],
             'probability': result['probability'],
             'ensemble_score': result.get('ensemble_score', result['probability']),
             'threshold': result['threshold'],
+            'suspicious_margin': result.get('suspicious_margin'),
             'email_id': email_id,
-            'is_phishing': result['prediction'] == 1,
+            'is_phishing': result['classification'] == 'PHISHING',
+            'is_suspicious': result['classification'] == 'SUSPICIOUS',
             'features': result.get('features', {})
         }, message='Email analyzed successfully')
     except Exception as e:

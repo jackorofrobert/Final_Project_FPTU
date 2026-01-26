@@ -12,6 +12,11 @@ MODELS_DIR.mkdir(parents=True, exist_ok=True)
 RANDOM_SEED = 42
 DEFAULT_THRESHOLD = 0.5
 
+# Multi-level classification margins
+# SUSPICIOUS zone: threshold < score <= threshold + SUSPICIOUS_MARGIN
+# PHISHING zone: score > threshold + SUSPICIOUS_MARGIN
+SUSPICIOUS_MARGIN = 0.2  # 20% margin above threshold for suspicious classification
+
 # Common column name candidates
 TEXT_COL_CANDIDATES = [
     "body", "email_body", "content", "message", "text", "email_text", "mail", "raw_text"

@@ -12,7 +12,7 @@ import numpy as np
 
 # Define feature columns
 TEXT_COL = 'text'
-NUMERIC_COLS = ['has_attachment', 'links_count', 'urgent_keywords']
+NUMERIC_COLS = ['has_attachment', 'links_count', 'urgent_keywords', 'body_length', 'exclamation_count']
 CATEGORICAL_COLS = ['sender_domain']
 FEATURE_COLS = [TEXT_COL] + NUMERIC_COLS + CATEGORICAL_COLS
 
@@ -91,7 +91,9 @@ def prepare_features(
     has_attachment: int = 0,
     links_count: int = 0,
     sender_domain: str = "unknown",
-    urgent_keywords: int = 0
+    urgent_keywords: int = 0,
+    body_length: int = 0,
+    exclamation_count: int = 0
 ) -> pd.DataFrame:
     """
     Prepare a single sample's features for prediction.
@@ -102,6 +104,8 @@ def prepare_features(
         links_count: Number of links in email
         sender_domain: Domain of sender
         urgent_keywords: 0 or 1
+        body_length: Length of email body in characters
+        exclamation_count: Number of exclamation marks
         
     Returns:
         DataFrame with single row of features
@@ -111,7 +115,9 @@ def prepare_features(
         'has_attachment': [int(has_attachment)],
         'links_count': [int(links_count)],
         'sender_domain': [str(sender_domain)],
-        'urgent_keywords': [int(urgent_keywords)]
+        'urgent_keywords': [int(urgent_keywords)],
+        'body_length': [int(body_length)],
+        'exclamation_count': [int(exclamation_count)]
     })
 
 

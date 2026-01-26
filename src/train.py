@@ -83,34 +83,60 @@ def resolve_label_column(df: pd.DataFrame, preferred: str) -> str:
         f"No label column found. Available columns: {list(df.columns)}"
     )
 
-
-def ensure_feature_columns(df: pd.DataFrame) -> pd.DataFrame:
+def ensure_feature_columns(df: pd.DataFrame, text_col: str = 'body') -> pd.DataFrame:
     """
-    Ensure all required feature columns exist with default values.
+    Ensure all required feature columns exist.
+    Auto-extract features from email body when columns don't exist.
+    
+    Args:
+        df: DataFrame with at least a text column
+        text_col: Name of the text column to extract features from
     """
-    # Ensure numeric columns exist with defaults
+    from .text_cleaning import (
+        count_urls, detect_urgent_keywords, extract_sender_domain,
+        detect_attachment_mention, exclamation_count, length_chars
+    )
+    
+    # Get text content for feature extraction
+    text_content = df[text_col].astype(str) if text_col in df.columns else df.iloc[:, 0].astype(str)
+    
+    # Auto-extract has_attachment from body
     if 'has_attachment' not in df.columns:
-        print("[AUTO] Adding 'has_attachment' column with default 0")
-        df['has_attachment'] = 0
+        print("[AUTO] Extracting 'has_attachment' from email body...")
+        df['has_attachment'] = text_content.apply(detect_attachment_mention)
     
+    # Auto-extract links_count from body
     if 'links_count' not in df.columns:
-        print("[AUTO] Adding 'links_count' column with default 0")
-        df['links_count'] = 0
+        print("[AUTO] Extracting 'links_count' from email body...")
+        df['links_count'] = text_content.apply(count_urls)
     
+    # Auto-extract urgent_keywords from body
     if 'urgent_keywords' not in df.columns:
-        print("[AUTO] Adding 'urgent_keywords' column with default 0")
-        df['urgent_keywords'] = 0
+        print("[AUTO] Extracting 'urgent_keywords' from email body...")
+        df['urgent_keywords'] = text_content.apply(detect_urgent_keywords)
     
-    # Ensure categorical column exists
+    # Auto-extract sender_domain from body
     if 'sender_domain' not in df.columns:
-        print("[AUTO] Adding 'sender_domain' column with default 'unknown'")
-        df['sender_domain'] = 'unknown'
+        print("[AUTO] Extracting 'sender_domain' from email body...")
+        df['sender_domain'] = text_content.apply(extract_sender_domain)
+    
+    # NEW: Auto-extract body_length
+    if 'body_length' not in df.columns:
+        print("[AUTO] Extracting 'body_length' from email body...")
+        df['body_length'] = text_content.apply(length_chars)
+    
+    # NEW: Auto-extract exclamation_count
+    if 'exclamation_count' not in df.columns:
+        print("[AUTO] Extracting 'exclamation_count' from email body...")
+        df['exclamation_count'] = text_content.apply(exclamation_count)
     
     # Convert types
     df['has_attachment'] = df['has_attachment'].fillna(0).astype(int)
     df['links_count'] = df['links_count'].fillna(0).astype(int)
     df['urgent_keywords'] = df['urgent_keywords'].fillna(0).astype(int)
     df['sender_domain'] = df['sender_domain'].fillna('unknown').astype(str)
+    df['body_length'] = df['body_length'].fillna(0).astype(int)
+    df['exclamation_count'] = df['exclamation_count'].fillna(0).astype(int)
     
     return df
 
@@ -187,8 +213,8 @@ def main():
     # 5. Resolve label column
     label_col = resolve_label_column(df, args.label_col.lower())
 
-    # 6. Ensure all feature columns exist
-    df = ensure_feature_columns(df)
+    # 6. Ensure all feature columns exist (auto-extract from text)
+    df = ensure_feature_columns(df, text_col)
 
     # 7. Create the 'text' column used by pipeline
     df[TEXT_COL] = df[text_col].astype(str)

@@ -16,14 +16,21 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 
 from src.text_cleaning import normalize_text, count_urls, detect_urgent_keywords, extract_sender_domain
 from src.features import prepare_features, calculate_ensemble_score
+from src.config import SUSPICIOUS_MARGIN
 
 logger = get_logger(__name__)
+
+# Classification levels
+CLASS_LEGITIMATE = "LEGITIMATE"
+CLASS_SUSPICIOUS = "SUSPICIOUS"
+CLASS_PHISHING = "PHISHING"
 
 class PredictionService:
     """Service for ML model predictions."""
     
     _model = None
     _threshold = None
+    _suspicious_margin = None
     _feature_cols = None
     
     @classmethod
@@ -37,6 +44,7 @@ class PredictionService:
                 # The model is a full Pipeline (vectorizer + classifier)
                 cls._model = pkg["model"]
                 cls._threshold = float(pkg.get("threshold", 0.5))
+                cls._suspicious_margin = float(pkg.get("suspicious_margin", SUSPICIOUS_MARGIN))
                 cls._feature_cols = pkg.get("feature_cols", [])
                 model_version = cls.get_model_version()
                 logger.info(f'ML model loaded successfully [model_path={model_path}] [version={model_version}] [threshold={cls._threshold}]')
@@ -118,16 +126,19 @@ class PredictionService:
                 has_attachment=has_attachment
             )
             
-            # Use ensemble_score for final prediction
-            pred = int(ensemble_score >= cls._threshold)
+            # Multi-level classification based on how much score exceeds threshold
+            classification = cls._classify_threat_level(ensemble_score)
+            pred = 0 if classification == CLASS_LEGITIMATE else 1
             
-            logger.debug(f'Prediction completed: prediction={pred} probability={proba:.4f} ensemble_score={ensemble_score:.4f} threshold={cls._threshold}')
+            logger.debug(f'Prediction completed: classification={classification} prediction={pred} probability={proba:.4f} ensemble_score={ensemble_score:.4f} threshold={cls._threshold}')
             
             return {
                 'prediction': pred,
+                'classification': classification,
                 'probability': round(proba, 6),
                 'ensemble_score': round(ensemble_score, 6),
                 'threshold': cls._threshold,
+                'suspicious_margin': cls._suspicious_margin,
                 'features': {
                     'links_count': links_count,
                     'has_attachment': has_attachment,
@@ -138,6 +149,32 @@ class PredictionService:
         except Exception as e:
             logger.error(f'Error during prediction: {str(e)}', exc_info=True)
             raise
+    
+    @classmethod
+    def _classify_threat_level(cls, ensemble_score: float) -> str:
+        """
+        Classify threat level based on how much score exceeds threshold.
+        
+        Levels:
+        - LEGITIMATE: score < threshold
+        - SUSPICIOUS: threshold <= score < threshold + suspicious_margin
+        - PHISHING: score >= threshold + suspicious_margin
+        
+        Args:
+            ensemble_score: The ensemble score (0.0 to 1.0)
+            
+        Returns:
+            Classification string: 'LEGITIMATE', 'SUSPICIOUS', or 'PHISHING'
+        """
+        threshold = cls._threshold
+        suspicious_margin = cls._suspicious_margin
+        
+        if ensemble_score < threshold:
+            return CLASS_LEGITIMATE
+        elif ensemble_score < threshold + suspicious_margin:
+            return CLASS_SUSPICIOUS
+        else:
+            return CLASS_PHISHING
     
     @classmethod
     def get_model_version(cls) -> str:

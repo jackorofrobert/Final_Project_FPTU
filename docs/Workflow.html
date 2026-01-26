@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Phishing Email Detection – Network + Workflow (v2)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root{
+      --bg:#0b1220;
+      --panel:#071225;
+      --border:#1e293b;
+      --text:#e5e7eb;
+      --muted:#cbd5f5;
+    }
+    body{margin:0;font-family:Segoe UI,Arial,sans-serif;background:var(--bg);color:var(--text);}
+    header{
+      padding:28px 24px;
+      background:linear-gradient(135deg,#020617,#071225);
+      border-bottom:1px solid var(--border);
+    }
+    header h1{margin:0;font-size:28px;}
+    header p{margin:8px 0 0;color:var(--muted);max-width:980px;line-height:1.6;}
+    main{max-width:1280px;margin:0 auto;padding:28px 20px 40px;}
+    .card{
+      background:var(--panel);
+      border:1px solid var(--border);
+      border-radius:16px;
+      padding:22px;
+      margin:18px 0;
+      box-shadow:0 10px 24px rgba(0,0,0,.25);
+    }
+    h2{margin:0 0 10px;font-size:20px;}
+    p{margin:8px 0 0;color:var(--muted);line-height:1.7;max-width:1040px;}
+    .mermaid{
+      background:rgba(2,6,23,.35);
+      border:1px solid rgba(30,41,59,.6);
+      border-radius:12px;
+      padding:16px;
+      margin-top:14px;
+      overflow-x:auto;
+    }
+    footer{
+      text-align:center;
+      color:#94a3b8;
+      padding:22px 18px;
+      border-top:1px solid var(--border);
+    }
+    .tips{
+      display:grid;
+      grid-template-columns:1fr;
+      gap:10px;
+      margin-top:10px;
+    }
+    .tip{
+      background:rgba(2,6,23,.35);
+      border:1px dashed rgba(148,163,184,.35);
+      border-radius:12px;
+      padding:12px 14px;
+      color:#dbeafe;
+      line-height:1.6;
+      font-size:14px;
+    }
+    code{font-family:Consolas,Menlo,monospace;font-size:0.95em;color:#e2e8f0;}
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Phishing Email Detection System</h1>
+  <p>
+    Network Architecture and Full Workflow (v2). This version is Mermaid v10 safe (no special characters that break parsing)
+    and includes both the network view and the training and prediction workflows, including dataset memory.
+  </p>
+</header>
+
+<main>
+
+  <section class="card">
+    <h2>1) Network Architecture</h2>
+    <p>
+      This diagram shows how email data flows from the mail server to the detection service, and how users interact with the system.
+      The ML model is stored as artifacts and loaded by the prediction service.
+    </p>
+
+    <div class="mermaid">
+flowchart LR
+User[User or Analyst] --> UI[CLI or API]
+Mail[Mail Server SMTP IMAP] --> Ingest[Email Ingestion Service]
+Ingest --> Predict[Prediction Service]
+UI --> Predict
+
+Predict --> Pre[Preprocess Text]
+Pre --> Feat[Feature Builder TFIDF plus URL]
+Feat --> Model[XGBoost Model]
+Model --> Out[Result Label and Probability]
+Out --> UI
+
+ModelStore[Model Artifacts model joblib] --> Predict
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>2) Offline Training Workflow</h2>
+    <p>
+      Training loads all datasets from a folder, normalizes columns, applies dataset memory by caching datasets into a history store,
+      merges in memory, then trains and evaluates the model.
+    </p>
+
+    <div class="mermaid">
+flowchart TB
+Incoming[Incoming Datasets Folder] --> Scan[Dataset Scanner]
+Scan --> Load[Dataset Loader CSV XLSX JSON]
+Load --> Norm[Normalize Columns]
+Norm --> Cache[Cache To History Store]
+Cache --> Merge[Merge In Memory]
+Merge --> Clean[Text Cleaning]
+Clean --> FE[Feature Engineering]
+FE --> Train[Train XGBoost]
+Train --> Eval[Evaluate F1 AUC]
+Eval --> Save[Save Artifacts]
+Save --> Store[models Folder]
+    </div>
+
+    <div class="tips">
+      <div class="tip">
+        Column override for unusual datasets:
+        <br/><code>python -m src.train --data-dir data --text-col email_text --label-col is_phishing</code>
+      </div>
+      <div class="tip">
+        Custom history location (optional):
+        <br/><code>python -m src.train --data-dir data --history-dir custom_history</code>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>3) Dataset Memory Strategy</h2>
+    <p>
+      The model is a batch learner. To retain historical knowledge, the system stores copies of all datasets used for training.
+      Retraining always uses historical datasets plus new datasets.
+    </p>
+
+    <div class="mermaid">
+flowchart LR
+NewDS[New Dataset Added] --> TrainRun[Training Run]
+TrainRun --> History[History Store]
+History --> NextTrain[Next Training Run]
+NextTrain --> ModelNew[New Model Version]
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>4) Online Prediction Workflow</h2>
+    <p>
+      Real time prediction via CLI or API. The service loads the trained artifacts, converts email text into features,
+      and outputs a phishing label and probability.
+    </p>
+
+    <div class="mermaid">
+flowchart TB
+Input[Email Text] --> P1[Preprocess Text]
+P1 --> P2[Build Features]
+P2 --> P3[Load Model]
+P3 --> P4[Predict Probability]
+P4 --> D{Prob ge Threshold}
+D -- Yes --> R1[Phishing]
+D -- No --> R0[Benign]
+    </div>
+  </section>
+
+  <section class="card">
+    <h2>5) End to End Summary</h2>
+    <p>
+      High level lifecycle from datasets to model artifacts to real time detection.
+    </p>
+
+    <div class="mermaid">
+flowchart LR
+DS[Datasets] --> TR[Offline Training]
+TR --> MA[Model Artifacts]
+MA --> PR[Online Prediction]
+PR --> RES[Alert or Safe Result]
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  Phishing Email Detection System – Network and Workflow v2
+</footer>
+
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs";
+  mermaid.initialize({ startOnLoad: true, theme: "dark" });
+</script>
+
+</body>
+</html>

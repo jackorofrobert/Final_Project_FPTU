@@ -9,3 +9,5 @@ data/app.db
 
 logs/
 *.log
+
+data/

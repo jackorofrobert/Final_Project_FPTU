@@ -12,13 +12,13 @@ def normalize_label(value):
     # Positive / phishing labels
     phishing_keywords = {
         "phishing", "phising", "spam", "scam",
-        "malicious", "fraud", "attack", "1", "true", "yes"
+        "malicious", "fraud", "attack", "1", "1.0", "true", "yes"
     }
 
     # Negative / legitimate labels
     legitimate_keywords = {
         "legitimate", "legit", "benign", "ham",
-        "normal", "safe", "clean", "0", "false", "no"
+        "normal", "safe", "clean", "0", "0.0", "false", "no"
     }
 
     if v in phishing_keywords:

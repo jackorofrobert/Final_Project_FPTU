@@ -49,31 +49,55 @@ Benefits:
 
 ```
 Final_Project_FPTU/
-├── src/
+├── src/                    # Core ML model source code
 │   ├── __init__.py
-│   ├── train.py
-│   ├── predict.py
-│   ├── features.py
-│   ├── data_io.py
-│   ├── label_utils.py
-│   └── text_cleaning.py
+│   ├── train.py           # Training pipeline
+│   ├── predict.py         # Prediction module
+│   ├── features.py        # Feature engineering
+│   ├── data_io.py         # Data loading utilities
+│   ├── label_utils.py     # Label normalization
+│   ├── text_cleaning.py   # Text preprocessing
+│   └── config.py          # Configuration
 │
-├── app/
-│   └── main.py
+├── app/                    # FastAPI REST API
+│   ├── main.py
+│   ├── api/
+│   ├── services/
+│   └── schemas/
 │
-├── data/
-│   ├── incoming/
-│   ├── history/
-│   └── runtime_cache/
+├── frontend/               # Web interface
+│   ├── index.html
+│   ├── style.css
+│   └── app.js
 │
-├── models/
+├── data/                   # Dataset storage
+│   ├── incoming/          # New datasets go here
+│   └── history/           # Cached/processed datasets
+│
+├── models/                 # Trained models
 │   ├── model.joblib
 │   └── metadata.json
 │
-├── samples/
+├── scripts/                # Analysis & utility scripts
+│   ├── analyze_dataset.py
+│   ├── analyze_patterns.py
+│   ├── analyze_text_length.py
+│   ├── check_labels.py
+│   └── prepare_dataset.py
+│
+├── tests/                  # Test files
+│   └── test_trusted_domain.py
+│
+├── docs/                   # Documentation
+│   ├── MODEL_DOCUMENTATION.md
+│   ├── plan.md
+│   ├── api.md
+│   └── frontend.md
+│
+├── samples/                # Sample email files
 ├── requirements.txt
-├── README.md
-└── README_VI.md
+├── run.py                  # Server entrypoint
+└── README.md
 ```
 
 ---

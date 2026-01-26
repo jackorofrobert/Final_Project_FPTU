@@ -2,7 +2,7 @@
 Pydantic schemas for prediction endpoints.
 """
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Literal
 
 
 class PredictionRequest(BaseModel):
@@ -29,23 +29,29 @@ class PredictionRequest(BaseModel):
 
 class PredictionResponse(BaseModel):
     """Prediction response schema."""
-    prediction: int = Field(..., description="Prediction result: 0 for benign, 1 for phishing", ge=0, le=1)
+    prediction: int = Field(..., description="Prediction result: 0 for benign, 1 for phishing/suspicious", ge=0, le=1)
+    classification: str = Field(..., description="Classification level: LEGITIMATE, SUSPICIOUS, or PHISHING")
     probability: float = Field(..., description="Model confidence score (0.0 to 1.0)", ge=0.0, le=1.0)
     ensemble_score: Optional[float] = Field(None, description="Ensemble score combining model + feature risks (0.0 to 1.0)", ge=0.0, le=1.0)
     threshold: float = Field(..., description="Threshold value used for classification", ge=0.0, le=1.0)
+    suspicious_margin: Optional[float] = Field(None, description="Margin above threshold for suspicious classification", ge=0.0, le=1.0)
     email_id: Optional[int] = Field(None, description="ID of the email record if saved")
-    is_phishing: bool = Field(..., description="Boolean indicating if email is classified as phishing")
+    is_phishing: bool = Field(..., description="Boolean indicating if email is classified as phishing (PHISHING level)")
+    is_suspicious: Optional[bool] = Field(None, description="Boolean indicating if email is classified as suspicious (SUSPICIOUS level)")
     features: Optional[Dict[str, Any]] = Field(None, description="Features used for prediction")
 
     class Config:
         json_schema_extra = {
             "example": {
                 "prediction": 1,
+                "classification": "SUSPICIOUS",
                 "probability": 0.85,
-                "ensemble_score": 0.92,
-                "threshold": 0.5,
+                "ensemble_score": 0.42,
+                "threshold": 0.3,
+                "suspicious_margin": 0.2,
                 "email_id": 123,
-                "is_phishing": True,
+                "is_phishing": False,
+                "is_suspicious": True,
                 "features": {
                     "links_count": 2,
                     "has_attachment": 0,

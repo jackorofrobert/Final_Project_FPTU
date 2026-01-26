@@ -9,6 +9,12 @@ from joblib import load
 
 from .text_cleaning import normalize_text, count_urls, detect_urgent_keywords, extract_sender_domain
 from .features import prepare_features, calculate_ensemble_score
+from .config import SUSPICIOUS_MARGIN
+
+# Classification levels
+CLASS_LEGITIMATE = "LEGITIMATE"
+CLASS_SUSPICIOUS = "SUSPICIOUS"
+CLASS_PHISHING = "PHISHING"
 
 
 def read_file(path: Path) -> str:
@@ -213,6 +219,7 @@ def main():
     pkg = load(args.model)
     model = pkg["model"]
     threshold = float(pkg.get("threshold", 0.5))
+    suspicious_margin = float(pkg.get("suspicious_margin", SUSPICIOUS_MARGIN))
 
     # Extract features
     X = extract_features_from_text(
@@ -240,9 +247,15 @@ def main():
         link_domains=link_domains
     )
     
-    # Use ensemble_score for final prediction
-    pred = int(ensemble_score >= threshold)
-    label_str = "PHISHING" if pred == 1 else "LEGITIMATE"
+    # Multi-level classification based on how much score exceeds threshold
+    if ensemble_score < threshold:
+        classification = CLASS_LEGITIMATE
+    elif ensemble_score < threshold + suspicious_margin:
+        classification = CLASS_SUSPICIOUS
+    else:
+        classification = CLASS_PHISHING
+    
+    pred = 0 if classification == CLASS_LEGITIMATE else 1
 
     # Analyze suspicious segments
     suspicious_segments = analyze_suspicious_segments(raw_text, model, threshold)
@@ -250,10 +263,12 @@ def main():
     # Output JSON (for tool / API usage)
     if args.json:
         result = {
-            "prediction": label_str,
+            "prediction": pred,
+            "classification": classification,
             "proba_phishing": round(proba_phishing, 6),
             "ensemble_score": round(ensemble_score, 6),
             "threshold": threshold,
+            "suspicious_margin": suspicious_margin,
             "features": {
                 "links_count": int(X['links_count'].iloc[0]),
                 "has_attachment": int(X['has_attachment'].iloc[0]),
@@ -269,10 +284,10 @@ def main():
     print("=" * 60)
     print(" Email Classification Result")
     print("-" * 60)
-    print(f"Prediction     : {label_str}")
+    print(f"Prediction     : {classification}")
     print(f"Model Prob     : {proba_phishing * 100:.2f} %")
     print(f"Ensemble Score : {ensemble_score * 100:.2f} %")
-    print(f"Threshold      : {threshold}")
+    print(f"Threshold      : {threshold} (SUSPICIOUS: {threshold} - {threshold + suspicious_margin}, PHISHING: > {threshold + suspicious_margin})")
     print("-" * 60)
     print("Extracted Features:")
     print(f"  - Links count    : {int(X['links_count'].iloc[0])}")
@@ -327,7 +342,19 @@ def main():
         print(f"  → Final Score: {base_score:.4f} ({base_score * 100:.2f}%)")
     
     print()
-    print(f"📌 Kết luận: {ensemble_score * 100:.2f}% {'≥' if ensemble_score >= threshold else '<'} {threshold * 100:.0f}% → {label_str}")
+    # Multi-level classification explanation
+    if classification == CLASS_LEGITIMATE:
+        status_icon = "✅"
+        explanation = f"{ensemble_score * 100:.2f}% < {threshold * 100:.0f}% (threshold)"
+    elif classification == CLASS_SUSPICIOUS:
+        status_icon = "⚠️"
+        explanation = f"{threshold * 100:.0f}% ≤ {ensemble_score * 100:.2f}% < {(threshold + suspicious_margin) * 100:.0f}%"
+    else:
+        status_icon = "🚨"
+        explanation = f"{ensemble_score * 100:.2f}% ≥ {(threshold + suspicious_margin) * 100:.0f}% (threshold + margin)"
+    
+    print(f"📌 Kết luận: {status_icon} {classification}")
+    print(f"   {explanation}")
     
     # Show suspicious segments
     if suspicious_segments:

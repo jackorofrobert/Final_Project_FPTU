@@ -1,17 +1,19 @@
 {
-  "num_datasets": 2,
-  "num_samples": 400000,
+  "num_datasets": 1,
+  "num_samples": 212085,
   "feature_cols": [
     "text",
     "has_attachment",
     "links_count",
     "urgent_keywords",
+    "body_length",
+    "exclamation_count",
     "sender_domain"
   ],
-  "optimal_threshold": 0.3,
-  "optimal_f1_score": 1.0,
+  "optimal_threshold": 0.6,
+  "optimal_f1_score": 0.9607,
   "label_distribution": {
-    "1": 200000,
-    "0": 200000
+    "0": 113096,
+    "1": 98989
   }
 }

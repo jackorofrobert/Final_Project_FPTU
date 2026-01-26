@@ -119,3 +119,51 @@ def extract_link_domains(text: str) -> list:
     return domains
 
 
+# Attachment-related keywords commonly found in emails
+ATTACHMENT_KEYWORDS = [
+    'attached', 'attachment', 'attachments', 'see attached',
+    'enclosed', 'find attached', 'please find', 'attached file',
+    '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+    '.zip', '.rar', '.exe', '.jpg', '.png', '.gif'
+]
+
+
+def detect_attachment_mention(text: str) -> int:
+    """
+    Detect if email mentions attachments.
+    
+    Args:
+        text: Raw email text
+        
+    Returns:
+        1 if attachment mentioned, 0 otherwise
+    """
+    if text is None:
+        return 0
+    text_lower = str(text).lower()
+    for keyword in ATTACHMENT_KEYWORDS:
+        if keyword in text_lower:
+            return 1
+    return 0
+
+
+def count_urgent_keywords(text: str) -> int:
+    """
+    Count how many urgent keywords are present in text.
+    
+    Args:
+        text: Raw email text
+        
+    Returns:
+        Number of unique urgent keywords found
+    """
+    if text is None:
+        return 0
+    text_lower = str(text).lower()
+    count = 0
+    for keyword in URGENT_KEYWORDS:
+        if keyword in text_lower:
+            count += 1
+    return count
+
+
