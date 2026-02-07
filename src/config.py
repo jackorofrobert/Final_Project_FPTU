@@ -25,17 +25,27 @@ LABEL_COL_CANDIDATES = [
     "label", "class", "target", "is_phishing", "phishing", "spam", "y"
 ]
 
-# Trusted domains - emails from these sources are less likely to be phishing
+# =============================================================================
+# TRUSTED DOMAINS - WHITELIST CỦA BẠN
+# =============================================================================
+# Chỉ domain trong danh sách này mới được coi là TRUSTED (Risk = 0%)
+# Tất cả domain khác sẽ là SUSPICIOUS (Risk = 50%)
+# 
+# Cách thêm domain:
+#   'example.com',           # Domain chính
+#   'mail.example.com',      # Subdomain cụ thể
+# =============================================================================
 TRUSTED_DOMAINS = [
-    # Job platforms
-    'linkedin.com', 'indeed.com', 'glassdoor.com', 'vietnamworks.com',
-    # Big tech
-    'google.com', 'gmail.com', 'microsoft.com', 'outlook.com',
-    'amazon.com', 'apple.com', 'facebook.com', 'meta.com',
-    # Dev/Social
-    'github.com', 'twitter.com', 'x.com', 'slack.com',
-    # E-commerce
-    'shopee.vn', 'lazada.vn', 'tiki.vn',
-    # Payment
-    'paypal.com', 'stripe.com',
+    # Thêm domain của bạn ở đây, ví dụ:
+    # 'company.com',
+    # 'partner.vn',
 ]
+
+# URL Shortener domains - often used to hide malicious links
+SHORTENER_DOMAINS = [
+    'bit.ly', 'bitly.com', 'tinyurl.com', 'goo.gl', 't.co',
+    'ow.ly', 'is.gd', 'buff.ly', 'j.mp', 'rb.gy',
+    'cutt.ly', 'short.io', 'tiny.cc', 'shorturl.at',
+]
+
+

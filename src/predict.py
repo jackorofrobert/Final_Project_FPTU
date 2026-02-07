@@ -296,50 +296,34 @@ def main():
     print(f"  - Sender domain  : {X['sender_domain'].iloc[0]}")
     
     # ========== DETAILED SCORE BREAKDOWN ==========
-    from .features import calculate_links_risk, calculate_domain_risk, is_trusted_domain
+    from .features import calculate_links_risk, calculate_domain_risk, classify_domain, classify_link
     
     links_risk = calculate_links_risk(int(X['links_count'].iloc[0]), link_domains)
     domain_risk = calculate_domain_risk(X['sender_domain'].iloc[0])
     urgent_risk = float(X['urgent_keywords'].iloc[0])
     
+    # Get domain classification
+    domain_type, _, domain_reason = classify_domain(X['sender_domain'].iloc[0])
+    
     print("-" * 60)
     print("📊 CHI TIẾT TÍNH ĐIỂM (Score Breakdown):")
     print("-" * 60)
-    print("Công thức: Ensemble = Model×60% + Urgent×15% + Links×15% + Domain×10%")
+    print("Công thức MỚI: Ensemble = Model×70% + Urgent×12% + Links×10.5% + Domain×7.5%")
+    print("(Trust đã được tích hợp trong Links Risk và Domain Risk)")
     print()
-    print(f"  1. Model Probability : {proba_phishing:.4f} × 0.60 = {proba_phishing * 0.60:.4f}")
-    print(f"  2. Urgent Keywords   : {urgent_risk:.4f} × 0.15 = {urgent_risk * 0.15:.4f}")
-    print(f"  3. Links Risk        : {links_risk:.4f} × 0.15 = {links_risk * 0.15:.4f}")
-    print(f"  4. Domain Risk       : {domain_risk:.4f} × 0.10 = {domain_risk * 0.10:.4f}")
+    print(f"  1. Model Probability : {proba_phishing:.4f} × 0.70 = {proba_phishing * 0.70:.4f}")
+    print(f"  2. Urgent Keywords   : {urgent_risk:.4f} × 0.12 = {urgent_risk * 0.12:.4f}")
+    print(f"  3. Links Risk        : {links_risk:.4f} × 0.105 = {links_risk * 0.105:.4f}")
+    print(f"  4. Domain Risk       : {domain_risk:.4f} × 0.075 = {domain_risk * 0.075:.4f}")
     print("  " + "-" * 40)
-    base_score = proba_phishing * 0.60 + urgent_risk * 0.15 + links_risk * 0.15 + domain_risk * 0.10
-    print(f"  → Base Score (trước bonus): {base_score:.4f} ({base_score * 100:.2f}%)")
-    
-    # Show trust bonus calculation
-    sender_is_trusted = is_trusted_domain(X['sender_domain'].iloc[0])
-    links_are_trusted = False
-    if link_domains and len(link_domains) > 0:
-        trusted_count = sum(1 for d in link_domains if is_trusted_domain(d))
-        trust_ratio = trusted_count / len(link_domains)
-        links_are_trusted = trust_ratio >= 0.8
+    final_score = proba_phishing * 0.70 + urgent_risk * 0.12 + links_risk * 0.105 + domain_risk * 0.075
+    print(f"  → Ensemble Score: {final_score:.4f} ({final_score * 100:.2f}%)")
     
     print()
-    print("🛡️ TRUSTED EMAIL BONUS:")
-    print(f"  - Sender domain trusted? : {'✅ Có' if sender_is_trusted else '❌ Không'}")
-    print(f"  - Links 80%+ trusted?    : {'✅ Có' if links_are_trusted else '❌ Không'}")
-    if link_domains:
-        trusted_count = sum(1 for d in link_domains if is_trusted_domain(d))
-        print(f"    ({trusted_count}/{len(link_domains)} domains trusted = {100*trusted_count/len(link_domains):.1f}%)")
-    
-    if sender_is_trusted and links_are_trusted:
-        print(f"  → Áp dụng: Giảm 40% (×0.6)")
-        print(f"  → Final Score: {base_score:.4f} × 0.6 = {base_score * 0.6:.4f} ({base_score * 0.6 * 100:.2f}%)")
-    elif sender_is_trusted or links_are_trusted:
-        print(f"  → Áp dụng: Giảm 20% (×0.8)")
-        print(f"  → Final Score: {base_score:.4f} × 0.8 = {base_score * 0.8:.4f} ({base_score * 0.8 * 100:.2f}%)")
-    else:
-        print(f"  → Không áp dụng bonus")
-        print(f"  → Final Score: {base_score:.4f} ({base_score * 100:.2f}%)")
+    print("🏷️ PHÂN LOẠI CHI TIẾT:")
+    print(f"  - Sender Domain: {X['sender_domain'].iloc[0]} ({domain_type})")
+    print(f"    {domain_reason}")
+    print(f"  - Links: {int(X['links_count'].iloc[0])} links, risk = {links_risk:.0%}")
     
     print()
     # Multi-level classification explanation

@@ -121,13 +121,34 @@ def prepare_features(
     })
 
 
-# Suspicious domain patterns commonly found in phishing
-SUSPICIOUS_DOMAIN_PATTERNS = [
-    'secure-', 'account-', 'login-', 'verify-', 'update-',
-    'alert-', 'billing-', 'support-', '-security', '-alert',
-    '-verify', '-confirm', 'paypal', 'amazon', 'microsoft',
-    'apple', 'google', 'facebook', 'bank', 'netflix'
-]
+# Domain Classification Types
+DOMAIN_TYPE_TRUSTED = "TRUSTED"
+DOMAIN_TYPE_CORPORATE = "CORPORATE"
+DOMAIN_TYPE_SUSPICIOUS = "SUSPICIOUS"
+DOMAIN_TYPE_UNKNOWN = "UNKNOWN"
+
+# Link Classification Types
+LINK_TYPE_TRUSTED = "TRUSTED"
+LINK_TYPE_SHORTENER = "SHORTENER"
+LINK_TYPE_IP_BASED = "IP_BASED"
+LINK_TYPE_SUSPICIOUS = "SUSPICIOUS"
+LINK_TYPE_NORMAL = "NORMAL"
+
+# Risk scores for each type
+DOMAIN_RISK_SCORES = {
+    DOMAIN_TYPE_TRUSTED: 0.0,
+    DOMAIN_TYPE_CORPORATE: 0.05,
+    DOMAIN_TYPE_SUSPICIOUS: 0.8,
+    DOMAIN_TYPE_UNKNOWN: 0.2,
+}
+
+LINK_RISK_SCORES = {
+    LINK_TYPE_TRUSTED: 0.0,
+    LINK_TYPE_SHORTENER: 0.6,
+    LINK_TYPE_IP_BASED: 0.9,
+    LINK_TYPE_SUSPICIOUS: 0.8,
+    LINK_TYPE_NORMAL: 0.1,
+}
 
 
 def is_trusted_domain(domain: str, trusted_list: list = None) -> bool:
@@ -158,9 +179,98 @@ def is_trusted_domain(domain: str, trusted_list: list = None) -> bool:
     return False
 
 
+def classify_domain(domain: str) -> tuple:
+    """
+    Classify domain into types with corresponding risk score.
+    
+    Logic đơn giản hóa:
+    - TRUSTED: Chỉ những domain bạn tự thêm vào TRUSTED_DOMAINS
+    - SUSPICIOUS: Tất cả domain còn lại (bao gồm UNKNOWN)
+    
+    Args:
+        domain: Domain to classify
+        
+    Returns:
+        Tuple of (domain_type, risk_score, reason)
+    """
+    from .config import TRUSTED_DOMAINS
+    
+    if not domain or domain == "unknown":
+        return (DOMAIN_TYPE_SUSPICIOUS, 0.5, "Domain không xác định → nghi ngờ")
+    
+    domain_lower = domain.lower()
+    
+    # CHỈ TRUSTED nếu nằm trong danh sách bạn tự thêm
+    if is_trusted_domain(domain_lower, TRUSTED_DOMAINS):
+        return (DOMAIN_TYPE_TRUSTED, 0.0, f"Domain trong whitelist của bạn")
+    
+    # TẤT CẢ CÒN LẠI ĐỀU LÀ SUSPICIOUS
+    return (DOMAIN_TYPE_SUSPICIOUS, 0.5, "Domain không trong whitelist → nghi ngờ")
+
+
+def classify_link(url: str, domain: str = None) -> tuple:
+    """
+    Classify link into types with corresponding risk score.
+    
+    Args:
+        url: Full URL to classify
+        domain: Extracted domain (optional, will extract if not provided)
+        
+    Returns:
+        Tuple of (link_type, risk_score, reason)
+    """
+    import re
+    from .config import SHORTENER_DOMAINS, TRUSTED_DOMAINS
+    
+    if not url:
+        return (LINK_TYPE_NORMAL, 0.1, "Link rỗng")
+    
+    url_lower = url.lower()
+    
+    # Check IP_BASED (highest risk)
+    ip_pattern = r'https?://\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'
+    if re.search(ip_pattern, url_lower):
+        return (LINK_TYPE_IP_BASED, 0.9, "Dùng địa chỉ IP thay vì domain")
+    
+    # Extract domain if not provided
+    if domain is None:
+        match = re.search(r'(?:https?://)?(?:www\.)?([^/\s?&#]+)', url_lower)
+        if match:
+            domain = match.group(1).split(':')[0]
+    
+    if not domain:
+        return (LINK_TYPE_SUSPICIOUS, 0.8, "Không thể extract domain")
+    
+    domain_lower = domain.lower()
+    
+    # Check SHORTENER
+    for shortener in SHORTENER_DOMAINS:
+        if domain_lower == shortener or domain_lower.endswith('.' + shortener):
+            return (LINK_TYPE_SHORTENER, 0.6, f"URL rút gọn ({shortener})")
+    
+    # Check TRUSTED
+    if is_trusted_domain(domain_lower, TRUSTED_DOMAINS):
+        return (LINK_TYPE_TRUSTED, 0.0, f"Link đến domain trusted")
+    
+    # Check SUSPICIOUS patterns in URL
+    suspicious_url_patterns = [
+        (r'login|signin|verify|confirm|secure|account', "Yêu cầu đăng nhập/xác minh"),
+        (r'password|credential|ssn|credit', "Yêu cầu thông tin nhạy cảm"),
+        (r'\.exe|\.zip|\.rar|\.scr', "Link tải file thực thi"),
+    ]
+    
+    for pattern, reason in suspicious_url_patterns:
+        if re.search(pattern, url_lower):
+            return (LINK_TYPE_SUSPICIOUS, 0.7, reason)
+    
+    # Default: NORMAL
+    return (LINK_TYPE_NORMAL, 0.1, "Link bình thường")
+
+
 def calculate_domain_risk(domain: str) -> float:
     """
     Calculate risk score for sender domain.
+    Uses classify_domain internally.
     
     Args:
         domain: Sender's email domain
@@ -168,65 +278,61 @@ def calculate_domain_risk(domain: str) -> float:
     Returns:
         Risk score between 0.0 and 1.0
     """
-    if not domain or domain == "unknown":
-        return 0.3  # Unknown domain has moderate risk
-    
-    domain_lower = domain.lower()
-    
-    # Trusted domains have zero risk
-    if is_trusted_domain(domain_lower):
-        return 0.0
-    
-    # Check for suspicious patterns
-    for pattern in SUSPICIOUS_DOMAIN_PATTERNS:
-        if pattern in domain_lower:
-            return 0.8  # High risk
-    
-    # Check for unusual TLDs
-    suspicious_tlds = ['.xyz', '.top', '.click', '.link', '.info', '.biz']
-    for tld in suspicious_tlds:
-        if domain_lower.endswith(tld):
-            return 0.6  # Moderate-high risk
-    
-    # Normal domains
-    return 0.1  # Low risk
+    _, risk_score, _ = classify_domain(domain)
+    return risk_score
 
 
-def calculate_links_risk(links_count: int, link_domains: list = None) -> float:
+
+def calculate_links_risk(links_count: int, link_domains: list = None, urls: list = None) -> float:
     """
-    Calculate risk score based on number of links.
-    If most links point to trusted domains, risk is reduced.
+    Calculate risk score based on links analysis.
+    Uses classify_link for each URL if available.
     
     Args:
         links_count: Number of links in email
         link_domains: List of domains from URLs (optional)
+        urls: List of full URLs (optional, for detailed classification)
         
     Returns:
         Risk score between 0.0 and 1.0
     """
-    # If we have domain info, check if most are trusted
-    if link_domains and len(link_domains) > 0:
-        trusted_count = sum(1 for d in link_domains if is_trusted_domain(d))
-        trust_ratio = trusted_count / len(link_domains)
-        
-        # If 80%+ of links are to trusted domains, minimal risk
-        if trust_ratio >= 0.8:
-            return 0.1
-        # If 50%+ trusted, reduce risk
-        elif trust_ratio >= 0.5:
-            return 0.3
-    
-    # Standard risk calculation based on count
     if links_count == 0:
         return 0.0
-    elif links_count == 1:
-        return 0.2
+    
+    # If we have URLs, classify each one and average the risk
+    if urls and len(urls) > 0:
+        total_risk = 0.0
+        for url in urls:
+            _, risk, _ = classify_link(url)
+            total_risk += risk
+        return total_risk / len(urls)
+    
+    # If we only have domain info, check trust ratio
+    if link_domains and len(link_domains) > 0:
+        total_risk = 0.0
+        for domain in link_domains:
+            if is_trusted_domain(domain):
+                total_risk += 0.0  # Trusted = 0 risk
+            else:
+                # Check if it's a known shortener
+                from .config import SHORTENER_DOMAINS
+                is_shortener = any(domain.lower() == s or domain.lower().endswith('.' + s) 
+                                   for s in SHORTENER_DOMAINS)
+                if is_shortener:
+                    total_risk += 0.6
+                else:
+                    total_risk += 0.1  # Normal domain
+        return total_risk / len(link_domains)
+    
+    # Fallback: risk based on count only
+    if links_count == 1:
+        return 0.15
     elif links_count <= 3:
-        return 0.4
+        return 0.25
     elif links_count <= 5:
-        return 0.6
+        return 0.4
     else:
-        return 0.8  # Many links is suspicious
+        return 0.6
 
 
 def calculate_ensemble_score(
@@ -235,16 +341,21 @@ def calculate_ensemble_score(
     links_count: int = 0,
     sender_domain: str = "unknown",
     has_attachment: int = 0,
-    link_domains: list = None
+    link_domains: list = None,
+    urls: list = None
 ) -> float:
     """
     Calculate ensemble score combining model probability with feature-based risk scores.
     
-    Weights:
-    - Model probability: 60%
-    - Urgent keywords: 15%
-    - Links risk: 15%
-    - Domain risk: 10%
+    NEW FORMULA (simplified, no separate bonus):
+    - Model probability: 70%
+    - Urgent keywords: 12%
+    - Links risk: 10.5%
+    - Domain risk: 7.5%
+    Total = 100%
+    
+    Trust is already factored into Links Risk and Domain Risk calculations,
+    so no additional bonus multiplication is needed.
     
     Args:
         model_proba: Probability from ML model (0.0 to 1.0)
@@ -252,42 +363,34 @@ def calculate_ensemble_score(
         links_count: Number of links
         sender_domain: Sender's domain
         has_attachment: 0 or 1 (currently not weighted)
-        link_domains: List of domains extracted from URLs (for trusted check)
+        link_domains: List of domains extracted from URLs
+        urls: List of full URLs (optional, for detailed classification)
         
     Returns:
         Ensemble score between 0.0 and 1.0
     """
-    # Feature-based risk scores
+    # Feature-based risk scores (trust is already factored in)
     urgent_risk = float(urgent_keywords)  # 0 or 1
-    links_risk = calculate_links_risk(links_count, link_domains)
+    links_risk = calculate_links_risk(links_count, link_domains, urls)
     domain_risk = calculate_domain_risk(sender_domain)
     
-    # Weighted combination
+    # NEW WEIGHTS:
+    # - Model: 70% (increased from 60%)
+    # - Urgent: 12% (decreased from 15%)
+    # - Links: 10.5% (decreased from 15%)
+    # - Domain: 7.5% (decreased from 10%)
+    # Total = 100%
     ensemble_score = (
-        model_proba * 0.60 +      # Model prediction weight
-        urgent_risk * 0.15 +       # Urgent keywords weight
-        links_risk * 0.15 +        # Links risk weight
-        domain_risk * 0.10         # Domain risk weight
+        model_proba * 0.70 +      # Model prediction weight
+        urgent_risk * 0.12 +       # Urgent keywords weight
+        links_risk * 0.105 +       # Links risk weight
+        domain_risk * 0.075        # Domain risk weight
     )
     
-    # ========== TRUSTED EMAIL BONUS ==========
-    # If both sender domain AND most links are trusted, apply a bonus reduction
-    # This helps reduce false positives for legitimate emails from trusted sources
-    sender_is_trusted = is_trusted_domain(sender_domain)
-    
-    # Check if 80%+ of links are to trusted domains
-    links_are_trusted = False
-    if link_domains and len(link_domains) > 0:
-        trusted_count = sum(1 for d in link_domains if is_trusted_domain(d))
-        trust_ratio = trusted_count / len(link_domains)
-        links_are_trusted = trust_ratio >= 0.8
-    
-    # Apply trust bonus: reduce score by 40% if fully trusted
-    if sender_is_trusted and links_are_trusted:
-        ensemble_score *= 0.6  # 40% reduction
-    elif sender_is_trusted or links_are_trusted:
-        ensemble_score *= 0.8  # 20% reduction if partially trusted
+    # No separate trusted bonus - trust is already in the component scores
+    # This makes the formula linear and easier to explain
     
     # Clamp to [0, 1]
     return max(0.0, min(1.0, ensemble_score))
+
 

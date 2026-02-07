@@ -146,8 +146,46 @@ python -m src.predict --file samples/phishing.txt
 
 ## 8. Machine Learning Model
 
-- TF-IDF feature extraction
-- XGBoost classifier
+- **Primary**: XGBoost classifier with TF-IDF features
+- **Alternative**: Random Forest, Logistic Regression
+
+### Ensemble Score Formula
+
+```
+Score = Model×70% + Urgent×12% + Links×10.5% + Domain×7.5%
+```
+
+### Domain Classification (Simple)
+
+- **TRUSTED (0%)**: Domains in your whitelist (`config.py`)
+- **SUSPICIOUS (50%)**: All other domains
+
+### Link Classification
+
+| Type       | Risk | Description                  |
+| ---------- | ---- | ---------------------------- |
+| TRUSTED    | 0%   | Links to whitelisted domains |
+| SHORTENER  | 60%  | bit.ly, tinyurl...           |
+| IP_BASED   | 90%  | Uses IP instead of domain    |
+| SUSPICIOUS | 80%  | Contains phishing patterns   |
+| NORMAL     | 10%  | Regular links                |
+
+### Multi-Model Support
+
+```bash
+# Train and save all models
+python scripts/compare_models.py --save-models
+
+# Predict with different models
+python -m src.predict --model models/random_forest.joblib --file email.txt
+python -m src.predict --model models/logistic_regression.joblib --file email.txt
+```
+
+### Show Feature Extraction
+
+```bash
+python scripts/show_features.py --file samples/test.txt
+```
 
 ---
 
