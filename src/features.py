@@ -351,7 +351,7 @@ def calculate_ensemble_score(
     - Model probability: 70%
     - Urgent keywords: 12%
     - Links risk: 10.5%
-    - Domain risk: 7.5%
+    - Sender risk: 7.5%
     Total = 100%
     
     Args:
@@ -437,11 +437,11 @@ def calculate_ensemble_score(
                 'domain_name': sender_domain,
                 'domain_type': domain_type,
                 'reason': domain_reason,
-                'description': f'Domain risk ({domain_type}): {domain_risk:.4f} × {W_DOMAIN:.1%} = {domain_contrib:.4f}'
+                'description': f'Sender risk ({domain_type}): {domain_risk:.4f} × {W_DOMAIN:.1%} = {domain_contrib:.4f}'
             },
             'formula_text': (
                 f'Ensemble = {model_proba:.4f}×70% + {urgent_risk:.0f}×12% + '
-                f'{links_risk:.4f}×10.5% + {domain_risk:.4f}×7.5% = {ensemble_score:.4f}'
+                f'{links_risk:.4f}×10.5% + {domain_risk:.4f}(Sender)×7.5% = {ensemble_score:.4f}'
             )
         }
     }

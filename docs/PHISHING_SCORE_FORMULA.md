@@ -165,6 +165,37 @@ Sender: hacker@unknown.xyz (không trong whitelist)
 
 ---
 
+### ⚠️ Lưu ý: Sender Risk ≠ Links Risk
+
+Cùng một domain (ví dụ `linkedin.com`) có thể có **kết quả khác nhau** ở Sender Risk và Links Risk vì chúng dùng **2 hệ thống phân loại riêng biệt**:
+
+|                        | **Sender Risk** (`classify_domain`)    | **Links Risk** (`classify_link`)                                                         |
+| ---------------------- | -------------------------------------- | ---------------------------------------------------------------------------------------- |
+| **Đánh giá**           | Domain **người gửi** email             | Domain trong **URL** nội dung email                                                      |
+| **Mục đích**           | Kiểm soát ai được gửi mail đến bạn     | Phát hiện link lừa đảo trong nội dung                                                    |
+| **Số mức**             | 2 mức: TRUSTED (0%) / SUSPICIOUS (50%) | 5 mức: IP_BASED (90%) / SUSPICIOUS (70%) / SHORTENER (60%) / NORMAL (10%) / TRUSTED (0%) |
+| **Tiêu chí nguy hiểm** | Không nằm trong whitelist = nghi ngờ   | Phải có pattern đáng ngờ (login, verify, IP...)                                          |
+
+**Ví dụ cụ thể với `linkedin.com` (chưa thêm vào whitelist):**
+
+```
+Sender: someone@linkedin.com
+  → classify_domain("linkedin.com")
+  → Không trong TRUSTED_DOMAINS → SUSPICIOUS (risk = 50%)
+
+Link trong email: https://linkedin.com/profile/...
+  → classify_link("https://linkedin.com/...")
+  → Không phải IP, shortener, hay pattern đáng ngờ
+  → NORMAL (risk = 10%)
+```
+
+> **Giải thích:** Sender Risk **nghiêm ngặt hơn** — mọi domain chưa được duyệt đều SUSPICIOUS.
+> Links Risk **linh hoạt hơn** — chỉ đánh dấu nguy hiểm khi URL chứa dấu hiệu lừa đảo rõ ràng.
+>
+> **Cách khắc phục:** Thêm domain vào `TRUSTED_DOMAINS` trong `config.py` → cả Sender Risk lẫn Links Risk đều trả về TRUSTED (0%).
+
+---
+
 ## Code Tính Toán Công Thức
 
 ### Luồng gọi hàm (Call Flow)

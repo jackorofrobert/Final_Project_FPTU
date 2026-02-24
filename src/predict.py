@@ -305,7 +305,7 @@ def main():
     print("-" * 60)
     print("📊 CHI TIẾT TÍNH ĐIỂM (Score Breakdown):")
     print("-" * 60)
-    print("Công thức: Ensemble = Model×70% + Urgent×12% + Links×10.5% + Domain×7.5%")
+    print("Công thức: Ensemble = Model×70% + Urgent×12% + Links×10.5% + Sender×7.5%")
     print()
     print(f"  1. {fd['model']['description']}")
     print(f"  2. {fd['urgent_keywords']['description']}")
