@@ -143,8 +143,8 @@ python -m src.train --data-dir data --text-col body --label-col label
 
 ```bash
 python -m src.predict --text "Verify your account now"
-python -m src.predict --file samples/phishing.txt
-python -m src.predict --file samples/phishing.txt --json
+python -m src.predict --file samples/test.txt
+python -m src.predict --file samples/test.txt --json
 ```
 
 ### Detailed Formula Output
