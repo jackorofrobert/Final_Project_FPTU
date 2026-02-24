@@ -117,14 +117,17 @@ class PredictionService:
             # Predict using pipeline
             proba = float(cls._model.predict_proba(X)[:, 1][0])
             
-            # Calculate ensemble score
-            ensemble_score = calculate_ensemble_score(
+            # Calculate ensemble score (returns detailed dict)
+            ensemble_result = calculate_ensemble_score(
                 model_proba=proba,
                 urgent_keywords=urgent_keywords,
                 links_count=links_count,
                 sender_domain=sender_domain,
                 has_attachment=has_attachment
             )
+            
+            ensemble_score = ensemble_result['ensemble_score']
+            formula_details = ensemble_result['formula_details']
             
             # Multi-level classification based on how much score exceeds threshold
             classification = cls._classify_threat_level(ensemble_score)
@@ -139,6 +142,7 @@ class PredictionService:
                 'ensemble_score': round(ensemble_score, 6),
                 'threshold': cls._threshold,
                 'suspicious_margin': cls._suspicious_margin,
+                'formula_details': formula_details,
                 'features': {
                     'links_count': links_count,
                     'has_attachment': has_attachment,

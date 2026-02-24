@@ -89,7 +89,7 @@ Xây dựng hệ thống phát hiện email lừa đảo (phishing) sử dụng 
 │  │   điểm = (xác_suất_mô_hình × 0.70)                         │ │
 │  │        + (từ_khóa_khẩn_cấp × 0.12)                         │ │
 │  │        + (rủi_ro_liên_kết × 0.105)                         │ │
-│  │        + (rủi_ro_tên_miền × 0.075)                         │ │
+│  │        + (rủi_ro_người_gửi × 0.075)                        │ │
 │  │                                                            │ │
 │  │ → Tổng = 100%, không có bonus riêng                        │ │
 │  └────────────────────────────────────────────────────────────┘ │

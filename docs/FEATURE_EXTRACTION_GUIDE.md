@@ -35,6 +35,7 @@
 > 💡 **"Feature Engineering is the key"** - Nhiều cuộc thi ML thắng nhờ features tốt, không phải thuật toán phức tạp.
 
 Máy tính không hiểu văn bản trực tiếp. Ta cần chuyển thành số:
+
 - "urgent" → không hiểu
 - urgent_keywords = 1 → hiểu được!
 
@@ -79,15 +80,15 @@ Máy tính không hiểu văn bản trực tiếp. Ta cần chuyển thành số
 
 ### 2.2 Danh sách đầy đủ các features
 
-| STT | Feature | Loại | Mô tả | Phương pháp trích xuất |
-|-----|---------|------|-------|------------------------|
-| 1 | `text` | Text | Nội dung email đã tiền xử lý | TF-IDF (5000 features) |
-| 2 | `links_count` | Numeric | Số lượng URL trong email | Đếm bằng Regex |
-| 3 | `urgent_keywords` | Numeric | Có chứa từ khóa khẩn cấp? (0/1) | Đối chiếu danh sách |
-| 4 | `has_attachment` | Numeric | Có đề cập file đính kèm? (0/1) | Pattern matching |
-| 5 | `body_length` | Numeric | Độ dài nội dung (ký tự) | len(text) |
-| 6 | `exclamation_count` | Numeric | Số dấu chấm than (!) | Đếm ký tự |
-| 7 | `sender_domain` | Categorical | Tên miền người gửi | Extract từ email address |
+| STT | Feature             | Loại        | Mô tả                           | Phương pháp trích xuất   |
+| --- | ------------------- | ----------- | ------------------------------- | ------------------------ |
+| 1   | `text`              | Text        | Nội dung email đã tiền xử lý    | TF-IDF (5000 features)   |
+| 2   | `links_count`       | Numeric     | Số lượng URL trong email        | Đếm bằng Regex           |
+| 3   | `urgent_keywords`   | Numeric     | Có chứa từ khóa khẩn cấp? (0/1) | Đối chiếu danh sách      |
+| 4   | `has_attachment`    | Numeric     | Có đề cập file đính kèm? (0/1)  | Pattern matching         |
+| 5   | `body_length`       | Numeric     | Độ dài nội dung (ký tự)         | len(text)                |
+| 6   | `exclamation_count` | Numeric     | Số dấu chấm than (!)            | Đếm ký tự                |
+| 7   | `sender_domain`     | Categorical | Tên miền người gửi              | Extract từ email address |
 
 ---
 
@@ -112,6 +113,7 @@ TF(từ, tài_liệu) = Số lần từ xuất hiện trong tài liệu / Tổng
 ```
 
 **Ví dụ:**
+
 ```
 Email: "Verify your account. Please verify now."
 Total words: 6
@@ -130,6 +132,7 @@ IDF(từ, corpus) = log(Tổng số tài liệu / Số tài liệu chứa từ �
 **Ý nghĩa:** Từ xuất hiện ở nhiều tài liệu → IDF thấp → ít quan trọng
 
 **Ví dụ với corpus 100,000 emails:**
+
 ```
 "the" xuất hiện trong 99,000 emails → IDF = log(100000/99000) = 0.01 (rất thấp)
 "verify" xuất hiện trong 5,000 emails → IDF = log(100000/5000) = 3.0 (cao)
@@ -169,6 +172,7 @@ Bigram (n=2):  ["verify your", "your account", "account immediately"]
 ```
 
 **Tại sao dùng Bigram?**
+
 - "account" đơn lẻ ít ý nghĩa
 - "verify account" rõ ràng là dấu hiệu phishing
 
@@ -213,6 +217,7 @@ count_urls(text)  # Output: 2
 ```
 
 **Tại sao quan trọng?**
+
 - Email phishing thường có nhiều link dẫn đến trang giả mạo
 - Email hợp lệ thường có 0-2 link
 
@@ -255,6 +260,7 @@ detect_urgent_keywords(text2)  # Output: 0
 ```
 
 **Tại sao quan trọng?**
+
 - Phishing tạo cảm giác cấp bách để người dùng không suy nghĩ kỹ
 - "Your account will be suspended in 24 hours!" → Điển hình phishing
 
@@ -284,6 +290,7 @@ detect_attachment_mention(text)  # Output: 1
 ```
 
 **Tại sao quan trọng?**
+
 - Phishing thường đính kèm file độc hại
 - Đề cập .exe, .scr → Rất đáng ngờ
 
@@ -299,6 +306,7 @@ length_chars("Verify now!")  # Output: 11
 ```
 
 **Tại sao quan trọng?**
+
 - Email phishing thường ngắn gọn, đi thẳng vào "call to action"
 - Email newsletter/marketing thường dài hơn
 
@@ -315,6 +323,7 @@ exclamation_count(text)  # Output: 5
 ```
 
 **Tại sao quan trọng?**
+
 - Phishing thường dùng nhiều dấu ! để tạo cảm giác cấp bách
 - Email chuyên nghiệp hiếm khi có nhiều hơn 1-2 dấu !
 
@@ -334,6 +343,7 @@ scaled_features = scaler.fit_transform(numeric_features)
 ```
 
 **Công thức:**
+
 ```
 z = (x - mean) / std_deviation
 ```
@@ -388,19 +398,20 @@ TRUSTED_DOMAINS = [
     # Big Tech
     'google.com', 'gmail.com', 'microsoft.com', 'outlook.com',
     'amazon.com', 'apple.com', 'facebook.com', 'meta.com',
-    
+
     # Job platforms
     'linkedin.com', 'indeed.com', 'vietnamworks.com',
-    
+
     # Vietnam E-commerce
     'shopee.vn', 'lazada.vn', 'tiki.vn',
-    
+
     # Payment
     'paypal.com', 'stripe.com',
 ]
 ```
 
 **Tại sao quan trọng?**
+
 - Email từ trusted domain → Giảm điểm rủi ro
 - Email từ "paypa1-secure.xyz" → Tăng điểm rủi ro
 
@@ -460,17 +471,17 @@ print(f">>> Optimal threshold: {best_threshold} (F1 = {best_f1:.4f})")
 
 ### 6.4 Kết quả Grid Search trong dự án
 
-| Threshold | F1-Score | Ghi chú |
-|-----------|----------|---------|
-| 0.30 | 0.9394 | Too low |
-| 0.35 | 0.9453 | |
-| 0.40 | 0.9506 | |
-| 0.45 | 0.9553 | |
-| 0.50 | 0.9582 | Default |
-| 0.55 | 0.9603 | |
-| **0.60** | **0.9607** | ✅ **OPTIMAL** |
-| 0.65 | 0.9588 | |
-| 0.70 | 0.9453 | Too high |
+| Threshold | F1-Score   | Ghi chú        |
+| --------- | ---------- | -------------- |
+| 0.30      | 0.9394     | Too low        |
+| 0.35      | 0.9453     |                |
+| 0.40      | 0.9506     |                |
+| 0.45      | 0.9553     |                |
+| 0.50      | 0.9582     | Default        |
+| 0.55      | 0.9603     |                |
+| **0.60**  | **0.9607** | ✅ **OPTIMAL** |
+| 0.65      | 0.9588     |                |
+| 0.70      | 0.9453     | Too high       |
 
 > 💡 **Kết luận:** Threshold = 0.6 cho F1-Score cao nhất (0.9607)
 
@@ -486,7 +497,7 @@ print(f">>> Optimal threshold: {best_threshold} (F1 = {best_f1:.4f})")
     │              │               │
     │ ◆ ◆ ◆ ◆ ◆ ◆  │  ▲ ▲ ▲ ▲ ▲   │
     │              │               │
-    
+
     ◆ = Email hợp lệ (mong muốn < 0.6)
     ▲ = Email phishing (mong muốn >= 0.6)
 ```
@@ -504,7 +515,7 @@ Model probability: 0.55 (sát ngưỡng)
 Nhưng email có:
   - 5 links đến domain lạ
   - Chứa từ "urgent", "suspended"
-  
+
 → Nên tăng điểm rủi ro!
 ```
 
@@ -517,7 +528,7 @@ ensemble_score = (
     model_proba * 0.60 +       # Model prediction: 60%
     urgent_risk * 0.15 +       # Urgent keywords: 15%
     links_risk * 0.15 +        # Links risk: 15%
-    domain_risk * 0.10         # Domain risk: 10%
+    sender_risk * 0.10         # Sender risk: 10%
 )
 ```
 
@@ -544,17 +555,17 @@ else:
     links_risk = 0.8
 ```
 
-#### Domain Risk
+#### Sender Risk
 
 ```python
 if sender_domain in TRUSTED_DOMAINS:
-    domain_risk = 0.0           # Trusted
+    sender_risk = 0.0           # Trusted
 elif "suspicious patterns" in sender_domain:
-    domain_risk = 0.8           # Suspicious
+    sender_risk = 0.8           # Suspicious
 elif sender_domain ends with [".xyz", ".top", ".click"]:
-    domain_risk = 0.6           # Risky TLD
+    sender_risk = 0.6           # Risky TLD
 else:
-    domain_risk = 0.1           # Normal
+    sender_risk = 0.1           # Normal
 ```
 
 ### 7.4 Trusted Domain Bonus
@@ -570,6 +581,7 @@ ensemble_score *= 0.8          # Giảm 20%
 ### 7.5 Ví dụ tính toán
 
 **Email phishing:**
+
 ```
 Content: "URGENT! Verify your account at https://paypa1-secure.xyz immediately!"
 Sender: support@paypa1-secure.xyz
@@ -587,6 +599,7 @@ Ensemble = 0.75 * 0.60 + 1.0 * 0.15 + 0.2 * 0.15 + 0.6 * 0.10
 ```
 
 **Email hợp lệ từ LinkedIn:**
+
 ```
 Content: "You have 3 new connection requests"
 Sender: notifications@linkedin.com
@@ -611,12 +624,12 @@ Trusted bonus: 0.225 * 0.6 = 0.135
 
 ### 8.1 Các file liên quan
 
-| File | Mô tả |
-|------|-------|
-| `src/features.py` | Pipeline trích xuất features + Ensemble score |
-| `src/text_cleaning.py` | Các hàm trích xuất từng feature |
-| `src/train.py` | Training pipeline + Threshold optimization |
-| `src/config.py` | Trusted domains list |
+| File                   | Mô tả                                         |
+| ---------------------- | --------------------------------------------- |
+| `src/features.py`      | Pipeline trích xuất features + Ensemble score |
+| `src/text_cleaning.py` | Các hàm trích xuất từng feature               |
+| `src/train.py`         | Training pipeline + Threshold optimization    |
+| `src/config.py`        | Trusted domains list                          |
 
 ### 8.2 Xem chi tiết code
 
@@ -624,7 +637,7 @@ Trusted bonus: 0.225 * 0.6 = 0.135
 # Xem feature pipeline
 cat src/features.py
 
-# Xem text cleaning functions  
+# Xem text cleaning functions
 cat src/text_cleaning.py
 ```
 
@@ -640,5 +653,5 @@ cat src/text_cleaning.py
 
 ---
 
-*Tài liệu được tạo cho nhóm đồ án*  
-*Cập nhật: Tháng 1/2026*
+_Tài liệu được tạo cho nhóm đồ án_  
+_Cập nhật: Tháng 1/2026_

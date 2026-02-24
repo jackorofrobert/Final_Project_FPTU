@@ -237,8 +237,8 @@ def main():
     from .text_cleaning import extract_link_domains
     link_domains = extract_link_domains(raw_text)
     
-    # Calculate ensemble score
-    ensemble_score = calculate_ensemble_score(
+    # Calculate ensemble score (now returns dict)
+    ensemble_result = calculate_ensemble_score(
         model_proba=proba_phishing,
         urgent_keywords=int(X['urgent_keywords'].iloc[0]),
         links_count=int(X['links_count'].iloc[0]),
@@ -246,6 +246,9 @@ def main():
         has_attachment=int(X['has_attachment'].iloc[0]),
         link_domains=link_domains
     )
+    
+    ensemble_score = ensemble_result['ensemble_score']
+    formula_details = ensemble_result['formula_details']
     
     # Multi-level classification based on how much score exceeds threshold
     if ensemble_score < threshold:
@@ -269,6 +272,7 @@ def main():
             "ensemble_score": round(ensemble_score, 6),
             "threshold": threshold,
             "suspicious_margin": suspicious_margin,
+            "formula_details": formula_details,
             "features": {
                 "links_count": int(X['links_count'].iloc[0]),
                 "has_attachment": int(X['has_attachment'].iloc[0]),
@@ -295,35 +299,34 @@ def main():
     print(f"  - Urgent keywords: {int(X['urgent_keywords'].iloc[0])}")
     print(f"  - Sender domain  : {X['sender_domain'].iloc[0]}")
     
-    # ========== DETAILED SCORE BREAKDOWN ==========
-    from .features import calculate_links_risk, calculate_domain_risk, classify_domain, classify_link
-    
-    links_risk = calculate_links_risk(int(X['links_count'].iloc[0]), link_domains)
-    domain_risk = calculate_domain_risk(X['sender_domain'].iloc[0])
-    urgent_risk = float(X['urgent_keywords'].iloc[0])
-    
-    # Get domain classification
-    domain_type, _, domain_reason = classify_domain(X['sender_domain'].iloc[0])
+    # ========== DETAILED SCORE BREAKDOWN from formula_details ==========
+    fd = formula_details
     
     print("-" * 60)
     print("📊 CHI TIẾT TÍNH ĐIỂM (Score Breakdown):")
     print("-" * 60)
-    print("Công thức MỚI: Ensemble = Model×70% + Urgent×12% + Links×10.5% + Domain×7.5%")
-    print("(Trust đã được tích hợp trong Links Risk và Domain Risk)")
+    print("Công thức: Ensemble = Model×70% + Urgent×12% + Links×10.5% + Domain×7.5%")
     print()
-    print(f"  1. Model Probability : {proba_phishing:.4f} × 0.70 = {proba_phishing * 0.70:.4f}")
-    print(f"  2. Urgent Keywords   : {urgent_risk:.4f} × 0.12 = {urgent_risk * 0.12:.4f}")
-    print(f"  3. Links Risk        : {links_risk:.4f} × 0.105 = {links_risk * 0.105:.4f}")
-    print(f"  4. Domain Risk       : {domain_risk:.4f} × 0.075 = {domain_risk * 0.075:.4f}")
+    print(f"  1. {fd['model']['description']}")
+    print(f"  2. {fd['urgent_keywords']['description']}")
+    print(f"  3. {fd['links']['description']}")
+    print(f"  4. {fd['domain']['description']}")
     print("  " + "-" * 40)
-    final_score = proba_phishing * 0.70 + urgent_risk * 0.12 + links_risk * 0.105 + domain_risk * 0.075
-    print(f"  → Ensemble Score: {final_score:.4f} ({final_score * 100:.2f}%)")
+    print(f"  → Ensemble Score: {ensemble_score:.4f} ({ensemble_score * 100:.2f}%)")
     
     print()
     print("🏷️ PHÂN LOẠI CHI TIẾT:")
-    print(f"  - Sender Domain: {X['sender_domain'].iloc[0]} ({domain_type})")
-    print(f"    {domain_reason}")
-    print(f"  - Links: {int(X['links_count'].iloc[0])} links, risk = {links_risk:.0%}")
+    domain_info = fd['domain']
+    links_info = fd['links']
+    print(f"  - Sender Domain: {domain_info['domain_name']} → {domain_info['domain_type']}")
+    print(f"    {domain_info['reason']}")
+    print(f"  - Links: {links_info['count']} links, risk = {links_info['raw_score']:.2%}")
+    
+    # Show link details if available
+    if links_info.get('details'):
+        print(f"    Chi tiết links:")
+        for ld in links_info['details']:
+            print(f"      - {ld['url']} → {ld['type']} (risk: {ld['risk']}) - {ld['reason']}")
     
     print()
     # Multi-level classification explanation

@@ -343,19 +343,16 @@ def calculate_ensemble_score(
     has_attachment: int = 0,
     link_domains: list = None,
     urls: list = None
-) -> float:
+) -> dict:
     """
     Calculate ensemble score combining model probability with feature-based risk scores.
     
-    NEW FORMULA (simplified, no separate bonus):
+    Formula:
     - Model probability: 70%
     - Urgent keywords: 12%
     - Links risk: 10.5%
     - Domain risk: 7.5%
     Total = 100%
-    
-    Trust is already factored into Links Risk and Domain Risk calculations,
-    so no additional bonus multiplication is needed.
     
     Args:
         model_proba: Probability from ML model (0.0 to 1.0)
@@ -367,30 +364,86 @@ def calculate_ensemble_score(
         urls: List of full URLs (optional, for detailed classification)
         
     Returns:
-        Ensemble score between 0.0 and 1.0
+        Dict with ensemble_score and detailed formula breakdown
     """
-    # Feature-based risk scores (trust is already factored in)
+    # Feature-based risk scores
     urgent_risk = float(urgent_keywords)  # 0 or 1
     links_risk = calculate_links_risk(links_count, link_domains, urls)
-    domain_risk = calculate_domain_risk(sender_domain)
+    domain_type, domain_risk, domain_reason = classify_domain(sender_domain)
     
-    # NEW WEIGHTS:
-    # - Model: 70% (increased from 60%)
-    # - Urgent: 12% (decreased from 15%)
-    # - Links: 10.5% (decreased from 15%)
-    # - Domain: 7.5% (decreased from 10%)
-    # Total = 100%
-    ensemble_score = (
-        model_proba * 0.70 +      # Model prediction weight
-        urgent_risk * 0.12 +       # Urgent keywords weight
-        links_risk * 0.105 +       # Links risk weight
-        domain_risk * 0.075        # Domain risk weight
-    )
+    # Classify each link for details
+    link_details = []
+    if urls and len(urls) > 0:
+        for url in urls:
+            ltype, lrisk, lreason = classify_link(url)
+            link_details.append({
+                'url': url[:80],  # Truncate long URLs
+                'type': ltype,
+                'risk': round(lrisk, 3),
+                'reason': lreason
+            })
+    elif link_domains and len(link_domains) > 0:
+        for d in link_domains:
+            trusted = is_trusted_domain(d)
+            link_details.append({
+                'url': d,
+                'type': LINK_TYPE_TRUSTED if trusted else LINK_TYPE_NORMAL,
+                'risk': 0.0 if trusted else 0.1,
+                'reason': 'Domain trusted' if trusted else 'Domain bình thường'
+            })
     
-    # No separate trusted bonus - trust is already in the component scores
-    # This makes the formula linear and easier to explain
+    # Weights
+    W_MODEL = 0.70
+    W_URGENT = 0.12
+    W_LINKS = 0.105
+    W_DOMAIN = 0.075
     
-    # Clamp to [0, 1]
-    return max(0.0, min(1.0, ensemble_score))
+    # Weighted contributions
+    model_contrib = model_proba * W_MODEL
+    urgent_contrib = urgent_risk * W_URGENT
+    links_contrib = links_risk * W_LINKS
+    domain_contrib = domain_risk * W_DOMAIN
+    
+    ensemble_score = model_contrib + urgent_contrib + links_contrib + domain_contrib
+    ensemble_score = max(0.0, min(1.0, ensemble_score))
+    
+    return {
+        'ensemble_score': round(ensemble_score, 6),
+        'formula_details': {
+            'model': {
+                'raw_score': round(model_proba, 6),
+                'weight': W_MODEL,
+                'contribution': round(model_contrib, 6),
+                'description': f'Model probability: {model_proba:.4f} × {W_MODEL:.0%} = {model_contrib:.4f}'
+            },
+            'urgent_keywords': {
+                'raw_score': urgent_risk,
+                'weight': W_URGENT,
+                'contribution': round(urgent_contrib, 6),
+                'description': f'Urgent keywords: {urgent_risk:.0f} × {W_URGENT:.0%} = {urgent_contrib:.4f}'
+            },
+            'links': {
+                'raw_score': round(links_risk, 4),
+                'weight': W_LINKS,
+                'contribution': round(links_contrib, 6),
+                'count': links_count,
+                'details': link_details,
+                'description': f'Links risk: {links_risk:.4f} × {W_LINKS:.1%} = {links_contrib:.4f}'
+            },
+            'domain': {
+                'raw_score': round(domain_risk, 4),
+                'weight': W_DOMAIN,
+                'contribution': round(domain_contrib, 6),
+                'domain_name': sender_domain,
+                'domain_type': domain_type,
+                'reason': domain_reason,
+                'description': f'Domain risk ({domain_type}): {domain_risk:.4f} × {W_DOMAIN:.1%} = {domain_contrib:.4f}'
+            },
+            'formula_text': (
+                f'Ensemble = {model_proba:.4f}×70% + {urgent_risk:.0f}×12% + '
+                f'{links_risk:.4f}×10.5% + {domain_risk:.4f}×7.5% = {ensemble_score:.4f}'
+            )
+        }
+    }
 
 

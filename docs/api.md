@@ -8,7 +8,8 @@ The Phishing Email Detection System provides a RESTful API built with FastAPI. T
 
 **API Version**: v1
 
-**Documentation**: 
+**Documentation**:
+
 - Swagger UI: `http://localhost:5001/docs`
 - ReDoc: `http://localhost:5001/redoc`
 - OpenAPI Schema: `http://localhost:5001/openapi.json`
@@ -34,6 +35,7 @@ Check if the current session is authenticated:
 **Authentication**: Optional
 
 **Response**:
+
 ```json
 {
   "success": true,
@@ -58,6 +60,7 @@ Check if the current session is authenticated:
 **Request Body**: Empty object `{}`
 
 **Response** (200 OK):
+
 ```json
 {
   "success": true,
@@ -70,6 +73,7 @@ Check if the current session is authenticated:
 ```
 
 **Error Response** (500):
+
 ```json
 {
   "success": false,
@@ -87,11 +91,13 @@ Check if the current session is authenticated:
 **Description**: Handles the OAuth2 callback from Google. This endpoint processes the authorization code and completes the authentication flow. Redirects to the frontend with success or error status.
 
 **Query Parameters**:
+
 - `code` (string, optional): Authorization code from Google
 - `state` (string, optional): OAuth state parameter for CSRF protection
 - `error` (string, optional): Error code if OAuth flow failed
 
 **Response**: HTTP 302 Redirect to frontend with hash parameter:
+
 - Success: `/#auth-success`
 - Error: `/#auth-error=<error_message>`
 
@@ -106,6 +112,7 @@ Check if the current session is authenticated:
 **Request Body**: Empty object `{}`
 
 **Response** (200 OK):
+
 ```json
 {
   "success": true,
@@ -114,6 +121,7 @@ Check if the current session is authenticated:
 ```
 
 **Error Response** (401):
+
 ```json
 {
   "success": false,
@@ -132,6 +140,7 @@ Check if the current session is authenticated:
 **Description**: Fetches emails from the authenticated user's Gmail account using the Gmail API. Emails are fetched and stored in the database for analysis.
 
 **Request Body**:
+
 ```json
 {
   "max_results": 50
@@ -139,9 +148,11 @@ Check if the current session is authenticated:
 ```
 
 **Parameters**:
+
 - `max_results` (integer, optional): Maximum number of emails to fetch (default: 50, max: 500)
 
 **Response** (200 OK):
+
 ```json
 {
   "success": true,
@@ -162,6 +173,7 @@ Check if the current session is authenticated:
 ```
 
 **Error Responses**:
+
 - 401: Authentication required
 - 500: Error fetching emails
 
@@ -174,10 +186,12 @@ Check if the current session is authenticated:
 **Description**: Retrieves a paginated list of emails stored in the database for the authenticated user. Each email includes its latest prediction if available.
 
 **Query Parameters**:
+
 - `limit` (integer, optional): Number of emails to return (default: 50, min: 1, max: 100)
 - `offset` (integer, optional): Number of emails to skip for pagination (default: 0)
 
 **Response** (200 OK):
+
 ```json
 {
   "success": true,
@@ -197,6 +211,7 @@ Check if the current session is authenticated:
 ```
 
 **Error Responses**:
+
 - 401: Authentication required
 - 500: Error retrieving email list
 
@@ -209,9 +224,11 @@ Check if the current session is authenticated:
 **Description**: Retrieves detailed information about a specific email, including its content and latest prediction result. Requires authentication and ownership of the email.
 
 **Path Parameters**:
+
 - `email_id` (integer): The ID of the email to retrieve
 
 **Response** (200 OK):
+
 ```json
 {
   "success": true,
@@ -235,6 +252,7 @@ Check if the current session is authenticated:
 ```
 
 **Error Responses**:
+
 - 401: Authentication required
 - 404: Email not found
 - 500: Error retrieving email
@@ -248,9 +266,11 @@ Check if the current session is authenticated:
 **Description**: Retrieves all prediction history for a specific email. Returns a list of all predictions made for the email, including historical predictions if the email was analyzed multiple times.
 
 **Path Parameters**:
+
 - `email_id` (integer): The ID of the email to get predictions for
 
 **Response** (200 OK):
+
 ```json
 {
   "success": true,
@@ -270,6 +290,7 @@ Check if the current session is authenticated:
 ```
 
 **Error Responses**:
+
 - 401: Authentication required or access denied
 - 500: Error retrieving predictions
 
@@ -284,6 +305,7 @@ Check if the current session is authenticated:
 **Description**: Analyzes email text for phishing detection using the ML model. This endpoint accepts raw email text and returns a prediction result.
 
 **Request Body**:
+
 ```json
 {
   "email_text": "Urgent: Verify your bank account immediately"
@@ -291,31 +313,88 @@ Check if the current session is authenticated:
 ```
 
 **Parameters**:
+
 - `email_text` (string, required): The email content to analyze
 
 **Response** (200 OK):
+
 ```json
 {
   "success": true,
   "data": {
     "prediction": 1,
+    "classification": "PHISHING",
     "probability": 0.95,
+    "ensemble_score": 0.7871,
     "threshold": 0.5,
+    "suspicious_margin": 0.2,
     "email_id": 123,
-    "is_phishing": true
+    "is_phishing": true,
+    "is_suspicious": false,
+    "features": { ... },
+    "formula_details": {
+      "model": {
+        "raw_score": 0.95,
+        "weight": 0.70,
+        "contribution": 0.665,
+        "description": "Model probability: 0.9500 × 70% = 0.6650"
+      },
+      "urgent_keywords": {
+        "raw_score": 1,
+        "weight": 0.12,
+        "contribution": 0.12,
+        "description": "Urgent keywords: 1 × 12% = 0.1200"
+      },
+      "links": {
+        "raw_score": 0.1,
+        "weight": 0.105,
+        "contribution": 0.0105,
+        "count": 2,
+        "details": [
+          { "url": "bit.ly/abc", "type": "SHORTENER", "risk": 0.6, "reason": "URL shortener" }
+        ],
+        "description": "Links risk: 0.1000 × 10.5% = 0.0105"
+      },
+      "domain": {
+        "raw_score": 0.5,
+        "weight": 0.075,
+        "contribution": 0.0375,
+        "domain_name": "unknown.xyz",
+        "domain_type": "SUSPICIOUS",
+        "reason": "Domain not in whitelist",
+        "description": "Sender risk (SUSPICIOUS): 0.5000 × 7.5% = 0.0375"
+      },
+      "formula_text": "Ensemble = 0.9500×70% + 1×12% + 0.1000×10.5% + 0.5000×7.5% = 0.7871"
+    }
   },
   "message": "Email analyzed successfully"
 }
 ```
 
 **Response Fields**:
-- `prediction`: 0 (benign) or 1 (phishing)
-- `probability`: Confidence score from 0.0 to 1.0
-- `threshold`: Classification threshold used (default: 0.5)
+
+- `prediction`: 0 (legitimate) or 1 (suspicious/phishing)
+- `classification`: `LEGITIMATE`, `SUSPICIOUS`, or `PHISHING`
+- `probability`: Model confidence score from 0.0 to 1.0
+- `ensemble_score`: Final ensemble score combining model + feature risks (0.0 to 1.0)
+- `threshold`: Classification threshold used
+- `suspicious_margin`: Margin between SUSPICIOUS and PHISHING
 - `email_id`: ID of created email record (if authenticated)
-- `is_phishing`: Boolean indicating if email is classified as phishing
+- `is_phishing`: Boolean - true if classification is PHISHING
+- `is_suspicious`: Boolean - true if classification is SUSPICIOUS
+- `features`: Extracted features used for prediction
+- `formula_details`: Detailed breakdown of each ensemble component (see below)
+
+**Formula Details Fields**:
+
+- `model`: ML model probability, weight (70%), contribution
+- `urgent_keywords`: Urgent keyword detection (0/1), weight (12%), contribution
+- `links`: Link risk analysis with per-link classification details, weight (10.5%)
+- `domain`: Sender domain trust status (TRUSTED/SUSPICIOUS), weight (7.5%) — labeled as "Sender Risk"
+- `formula_text`: Human-readable formula string
 
 **Error Responses**:
+
 - 400: Invalid request - missing email text
 - 500: Error analyzing email
 
@@ -328,11 +407,13 @@ Check if the current session is authenticated:
 **Description**: Analyzes a stored email from the database for phishing detection. The email must belong to the authenticated user. The prediction result is saved to the database.
 
 **Path Parameters**:
+
 - `email_id` (integer): The ID of the stored email to analyze
 
 **Request Body**: Empty object `{}`
 
 **Response** (200 OK):
+
 ```json
 {
   "success": true,
@@ -357,6 +438,7 @@ Check if the current session is authenticated:
 ```
 
 **Error Responses**:
+
 - 401: Authentication required
 - 404: Email not found
 - 500: Error analyzing email
@@ -372,10 +454,12 @@ Check if the current session is authenticated:
 **Description**: Retrieves a paginated list of prediction history for the authenticated user. Each prediction includes the email details and prediction results.
 
 **Query Parameters**:
+
 - `limit` (integer, optional): Number of predictions to return (default: 100, min: 1, max: 500)
 - `offset` (integer, optional): Number of predictions to skip for pagination (default: 0)
 
 **Response** (200 OK):
+
 ```json
 {
   "success": true,
@@ -402,6 +486,7 @@ Check if the current session is authenticated:
 ```
 
 **Error Responses**:
+
 - 401: Authentication required
 - 500: Error retrieving prediction history
 
@@ -429,7 +514,7 @@ All API endpoints follow a consistent error response format:
 
 ### Common Error Scenarios
 
-1. **Authentication Required (401)**: 
+1. **Authentication Required (401)**:
    - User is not authenticated
    - Session expired
    - OAuth tokens invalid or expired
@@ -456,12 +541,14 @@ All API endpoints follow a consistent error response format:
 ## Rate Limiting
 
 Currently, the API does not implement rate limiting. However, Gmail API has its own rate limits:
+
 - **Quota**: 1,000,000,000 quota units per day
 - **Per-user rate limit**: 250 quota units per user per second
 
 ## OAuth2 Scopes
 
 The application requests the following OAuth2 scopes:
+
 - `openid`: OpenID Connect
 - `https://www.googleapis.com/auth/userinfo.profile`: User profile information
 - `https://www.googleapis.com/auth/userinfo.email`: User email address
@@ -478,6 +565,7 @@ The application requests the following OAuth2 scopes:
 ## Data Models
 
 ### Email
+
 ```json
 {
   "id": 1,
@@ -494,6 +582,7 @@ The application requests the following OAuth2 scopes:
 ```
 
 ### Prediction
+
 ```json
 {
   "id": 1,
@@ -511,18 +600,18 @@ The application requests the following OAuth2 scopes:
 
 ```javascript
 // 1. Initiate OAuth2 flow
-const response = await fetch('http://localhost:5001/api/v1/auth/connect', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  credentials: 'include',
-  body: JSON.stringify({})
+const response = await fetch("http://localhost:5001/api/v1/auth/connect", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include",
+  body: JSON.stringify({}),
 });
 const data = await response.json();
 // Redirect user to data.data.authorization_url
 
 // 2. After callback, check status
-const statusResponse = await fetch('http://localhost:5001/api/v1/auth/status', {
-  credentials: 'include'
+const statusResponse = await fetch("http://localhost:5001/api/v1/auth/status", {
+  credentials: "include",
 });
 const status = await statusResponse.json();
 ```
@@ -531,32 +620,38 @@ const status = await statusResponse.json();
 
 ```javascript
 // 1. Fetch emails from Gmail
-const fetchResponse = await fetch('http://localhost:5001/api/v1/emails/fetch', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  credentials: 'include',
-  body: JSON.stringify({ max_results: 50 })
+const fetchResponse = await fetch("http://localhost:5001/api/v1/emails/fetch", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  credentials: "include",
+  body: JSON.stringify({ max_results: 50 }),
 });
 
 // 2. Analyze a stored email
-const analyzeResponse = await fetch('http://localhost:5001/api/v1/predictions/analyze-email/123', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  credentials: 'include',
-  body: JSON.stringify({})
-});
+const analyzeResponse = await fetch(
+  "http://localhost:5001/api/v1/predictions/analyze-email/123",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({}),
+  },
+);
 ```
 
 ### Manual Email Analysis
 
 ```javascript
 // Analyze email text directly
-const analyzeResponse = await fetch('http://localhost:5001/api/v1/predictions/analyze', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  credentials: 'include',
-  body: JSON.stringify({
-    email_text: "Urgent: Verify your bank account immediately"
-  })
-});
+const analyzeResponse = await fetch(
+  "http://localhost:5001/api/v1/predictions/analyze",
+  {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "include",
+    body: JSON.stringify({
+      email_text: "Urgent: Verify your bank account immediately",
+    }),
+  },
+);
 ```

@@ -144,7 +144,8 @@ async def analyze(
             'email_id': email_id,
             'is_phishing': result['classification'] == 'PHISHING',
             'is_suspicious': result['classification'] == 'SUSPICIOUS',
-            'features': result.get('features', {})
+            'features': result.get('features', {}),
+            'formula_details': result.get('formula_details', {})
         }, message='Email analyzed successfully')
     except Exception as e:
         logger.error(f'Error analyzing email [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)

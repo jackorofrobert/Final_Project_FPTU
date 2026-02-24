@@ -5,12 +5,14 @@
 The frontend is a single-page application (SPA) built with vanilla JavaScript, HTML5, and CSS3. It communicates with the FastAPI backend through REST API endpoints. The application provides a user-friendly interface for Gmail authentication, email fetching, phishing detection analysis, and viewing prediction history.
 
 **Technology Stack**:
+
 - Vanilla JavaScript (ES6+)
 - HTML5
 - CSS3
 - No external frameworks or libraries
 
 **File Structure**:
+
 ```
 frontend/
 ├── index.html          # Main HTML file
@@ -63,6 +65,7 @@ User Action → App.js → API.js → Backend API
 **Description**: Landing page with feature overview and quick actions.
 
 **Features**:
+
 - Hero section with application title
 - Feature cards showing main capabilities:
   - Connect Gmail
@@ -81,6 +84,7 @@ User Action → App.js → API.js → Backend API
 **Description**: Displays a list of emails fetched from Gmail.
 
 **Features**:
+
 - Table view of emails with columns:
   - Subject
   - Sender
@@ -100,6 +104,7 @@ User Action → App.js → API.js → Backend API
 **Description**: Advanced email management with bulk operations and analytics.
 
 **Features**:
+
 - Email list with checkboxes for selection
 - Select all / Clear selection
 - Bulk action bar (shown when emails are selected):
@@ -126,15 +131,22 @@ User Action → App.js → API.js → Backend API
 **Description**: Manual email analysis interface.
 
 **Features**:
+
 - Text area for email content input
 - Analyze button
 - Results display area showing:
-  - Prediction (Phishing/Benign)
-  - Confidence score
-  - Probability percentage
-  - Visual indicators (badges)
+  - Prediction (Phishing/Suspicious/Legitimate) with color-coded alert
+  - Classification level, Model Probability, Ensemble Score, Threshold
+  - **Detailed Formula Breakdown Table:**
+    - 🤖 Model Probability: raw score × 70% = contribution
+    - 🚨 Urgent Keywords: raw score × 12% = contribution
+    - 🔗 Links Risk: raw score × 10.5% = contribution + per-link sub-table
+    - 🌐 Sender Risk: raw score × 7.5% = contribution + TRUSTED/SUSPICIOUS badge
+    - 🎯 Ensemble Score tổng kết
+    - Formula text (monospace)
+  - Visual indicators (badges for domain type, link type)
 
-**Code Location**: `app.js` → `renderAnalyze()`
+**Code Location**: `app.js` → `renderAnalyze()`, `handleAnalyze()`
 
 ### 5. History Page
 
@@ -143,6 +155,7 @@ User Action → App.js → API.js → Backend API
 **Description**: Displays prediction history for authenticated user.
 
 **Features**:
+
 - Table view of predictions with columns:
   - Email Subject
   - Sender
@@ -162,6 +175,7 @@ User Action → App.js → API.js → Backend API
 **Description**: Detailed view of a single email.
 
 **Features**:
+
 - Email metadata (subject, sender, recipient, date)
 - Full email body content
 - Prediction results (if analyzed):
@@ -185,6 +199,7 @@ User Action → App.js → API.js → Backend API
 **Purpose**: Centralized API communication layer.
 
 **Key Methods**:
+
 - `request(endpoint, options)` - Generic HTTP request handler
 - `get(endpoint, options)` - GET request
 - `post(endpoint, data, options)` - POST request
@@ -201,6 +216,7 @@ User Action → App.js → API.js → Backend API
 - `getPredictionHistory(limit, offset)` - Get prediction history
 
 **Error Handling**:
+
 - Custom `ApiError` class with error types:
   - `AUTH_ERROR` - Authentication failures
   - `NETWORK_ERROR` - Network connectivity issues
@@ -210,6 +226,7 @@ User Action → App.js → API.js → Backend API
 - User-friendly error messages
 
 **Configuration**:
+
 - Base URL: `http://localhost:5001/api/v1`
 - Credentials: `include` (for session cookies)
 - Content-Type: `application/json`
@@ -221,11 +238,13 @@ User Action → App.js → API.js → Backend API
 **Purpose**: Manages user authentication state and OAuth2 flow.
 
 **Properties**:
+
 - `isAuthenticated` (boolean) - Current authentication status
 - `user` (object) - User information (id, email)
 - `onAuthStateChange` (function) - Callback for auth state changes
 
 **Key Methods**:
+
 - `checkStatus()` - Check current authentication status
 - `connectGmail()` - Initiate OAuth2 connection flow
 - `disconnect()` - Disconnect Gmail account
@@ -235,6 +254,7 @@ User Action → App.js → API.js → Backend API
 - `setOnAuthStateChange(callback)` - Set callback for auth state changes
 
 **OAuth2 Flow**:
+
 1. User clicks "Connect Gmail"
 2. `connectGmail()` called → API request to `/api/v1/auth/connect`
 3. Server returns authorization URL
@@ -252,6 +272,7 @@ User Action → App.js → API.js → Backend API
 **Purpose**: Main application controller managing routing, UI rendering, and user interactions.
 
 **Properties**:
+
 - `currentPage` (string) - Current active page
 - `selectedEmails` (Set) - Selected email IDs for bulk operations
 - `emailManagementData` (array) - Cached email list data
@@ -259,16 +280,19 @@ User Action → App.js → API.js → Backend API
 **Key Methods**:
 
 **Initialization**:
+
 - `init()` - Initialize application
 - `setupRouting()` - Set up client-side routing
 - `handleAuthCallback()` - Handle OAuth callback
 
 **Navigation**:
+
 - `navigate(page, pushState)` - Navigate to page
 - `loadPage(page)` - Load and render page
 - `updateNavigation()` - Update navigation UI
 
 **Page Rendering**:
+
 - `renderHome()` - Render home page
 - `renderEmails()` - Render email list page
 - `renderEmailManagement()` - Render email management page
@@ -277,12 +301,14 @@ User Action → App.js → API.js → Backend API
 - `viewEmail(emailId)` - Show email detail view
 
 **Email Operations**:
+
 - `fetchEmails()` - Fetch emails from Gmail
 - `analyzeEmail(emailId)` - Analyze a single email
 - `analyzeSelectedEmails()` - Analyze selected emails (bulk)
 - `analyzeAllEmails()` - Analyze all emails
 
 **Email Management**:
+
 - `toggleEmailSelection(emailId, isSelected)` - Toggle email selection
 - `toggleSelectAll(selectAll)` - Select/deselect all emails
 - `clearSelection()` - Clear all selections
@@ -291,6 +317,7 @@ User Action → App.js → API.js → Backend API
 - `renderEmailList(emails)` - Render email list table
 
 **UI Utilities**:
+
 - `showLoading()` - Show loading indicator
 - `hideLoading()` - Hide loading indicator
 - `showSuccess(message)` - Show success message
@@ -332,6 +359,7 @@ User Action → App.js → API.js → Backend API
 ### 3. Email Analysis Flow
 
 **Manual Analysis**:
+
 ```
 1. User navigates to Analyze page
 2. User enters email text in textarea
@@ -344,6 +372,7 @@ User Action → App.js → API.js → Backend API
 ```
 
 **Stored Email Analysis**:
+
 ```
 1. User views email list
 2. User clicks "Analyze" on an email
@@ -356,6 +385,7 @@ User Action → App.js → API.js → Backend API
 ```
 
 **Bulk Analysis**:
+
 ```
 1. User navigates to Email Management page
 2. User selects multiple emails (checkboxes)
@@ -392,6 +422,7 @@ The application uses client-side routing with URL hash fragments:
 - `#auth-error=<message>` - OAuth error callback
 
 **Routing Implementation**:
+
 - Hash-based routing (no page reloads)
 - Browser history support (back/forward buttons)
 - Navigation via `data-page` attributes on links
@@ -404,12 +435,14 @@ The application uses client-side routing with URL hash fragments:
 The application uses a custom CSS file (`style.css`) with:
 
 **Design System**:
+
 - Color scheme: Dark blue navbar (#2c3e50), light gray background (#f5f5f5)
 - Typography: System font stack
 - Spacing: Consistent padding and margins
 - Responsive: Container-based layout with max-width
 
 **Component Styles**:
+
 - Navigation bar
 - Buttons (primary, secondary, small variants)
 - Forms and inputs
@@ -420,6 +453,7 @@ The application uses a custom CSS file (`style.css`) with:
 - Modals/Overlays
 
 **Utility Classes**:
+
 - `.container` - Content container
 - `.btn` - Button base class
 - `.badge` - Status badge
@@ -533,6 +567,7 @@ All frontend-backend communication happens through REST API:
 ## Future Enhancements
 
 Potential improvements:
+
 - Real-time updates (WebSocket)
 - Offline support (Service Workers)
 - Progressive Web App (PWA) features

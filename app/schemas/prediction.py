@@ -39,6 +39,7 @@ class PredictionResponse(BaseModel):
     is_phishing: bool = Field(..., description="Boolean indicating if email is classified as phishing (PHISHING level)")
     is_suspicious: Optional[bool] = Field(None, description="Boolean indicating if email is classified as suspicious (SUSPICIOUS level)")
     features: Optional[Dict[str, Any]] = Field(None, description="Features used for prediction")
+    formula_details: Optional[Dict[str, Any]] = Field(None, description="Detailed formula breakdown with component scores")
 
     class Config:
         json_schema_extra = {

@@ -90,6 +90,10 @@ Final_Project_FPTU/
 │
 ├── docs/                   # Documentation
 │   ├── MODEL_DOCUMENTATION.md
+│   ├── PHISHING_SCORE_FORMULA.md
+│   ├── FEATURE_EXTRACTION_GUIDE.md
+│   ├── DATA_CLEANING_GUIDE.md
+│   ├── ML_LEARNING_GUIDE.md
 │   ├── plan.md
 │   ├── api.md
 │   └── frontend.md
@@ -140,7 +144,22 @@ python -m src.train --data-dir data --text-col body --label-col label
 ```bash
 python -m src.predict --text "Verify your account now"
 python -m src.predict --file samples/phishing.txt
+python -m src.predict --file samples/phishing.txt --json
 ```
+
+### Detailed Formula Output
+
+Cả CLI và API đều trả về chi tiết công thức Ensemble:
+
+| Thông tin             | Mô tả                                                                     |
+| --------------------- | ------------------------------------------------------------------------- |
+| **Model Probability** | Raw score × 70% = contribution                                            |
+| **Urgent Keywords**   | 0 hoặc 1 × 12% = contribution                                             |
+| **Links Risk**        | Chi tiết từng link (TRUSTED/NORMAL/SHORTENER/IP_BASED/SUSPICIOUS) × 10.5% |
+| **Domain Risk**       | Domain → TRUSTED (0%) hoặc SUSPICIOUS (50%) × 7.5%                        |
+| **Formula Text**      | Chuỗi công thức đầy đủ                                                    |
+
+> Chi tiết tham khảo: [docs/PHISHING_SCORE_FORMULA.md](docs/PHISHING_SCORE_FORMULA.md)
 
 ---
 
