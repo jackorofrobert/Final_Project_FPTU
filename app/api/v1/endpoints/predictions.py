@@ -251,8 +251,20 @@ async def analyze_email(
             logger.warning(f'Email prediction access denied [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]')
             return unauthorized_response('Access denied')
         
-        # Get prediction
-        result = PredictionService.predict(email['body'])
+        # Get prediction with sender info
+        sender_domain = None
+        if email.get('sender'):
+            # Extract domain from sender email
+            import re
+            email_match = re.search(r'@([a-zA-Z0-9.-]+)', email['sender'])
+            if email_match:
+                sender_domain = email_match.group(1).lower()
+        
+        result = PredictionService.predict(
+            email_text=email['body'],
+            subject=email.get('subject'),
+            sender_domain=sender_domain
+        )
         
         logger.info(
             f'Email prediction completed: prediction={result["prediction"]} '
