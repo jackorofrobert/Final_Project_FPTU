@@ -200,13 +200,7 @@ class App {
                                     <td>${email.sender || ""}</td>
                                     <td>${email.received_at ? email.received_at.substring(0, 10) : ""}</td>
                                     <td>
-                                        ${
-                                          email.prediction
-                                            ? email.prediction.prediction == 1
-                                              ? `<span class="badge badge-danger">Phishing</span> <small>(${(email.prediction.probability * 100).toFixed(2)}%)</small>`
-                                              : `<span class="badge badge-success">Benign</span> <small>(${(email.prediction.probability * 100).toFixed(2)}%)</small>`
-                                            : `<span class="badge badge-secondary">Not Analyzed</span>`
-                                        }
+                                        ${this.renderPredictionBadge(email.prediction)}
                                     </td>
                                     <td>
                                         <button class="btn btn-sm" onclick="app.viewEmail(${email.id})">View</button>
@@ -291,11 +285,7 @@ class App {
                                     <td>${pred.email ? pred.email.subject || "(No Subject)" : "N/A"}</td>
                                     <td>${pred.email ? pred.email.sender || "" : "N/A"}</td>
                                     <td>
-                                        ${
-                                          pred.prediction == 1
-                                            ? `<span class="badge badge-danger">Phishing</span>`
-                                            : `<span class="badge badge-success">Benign</span>`
-                                        }
+                                        ${this.renderPredictionBadge(pred)}
                                     </td>
                                     <td>${(pred.probability * 100).toFixed(2)}%</td>
                                     <td>${pred.created_at ? pred.created_at.substring(0, 10) : ""}</td>
@@ -437,13 +427,7 @@ class App {
                             <td>${email.sender || ""}</td>
                             <td>${email.received_at ? email.received_at.substring(0, 10) : ""}</td>
                             <td>
-                                ${
-                                  email.prediction
-                                    ? email.prediction.prediction == 1
-                                      ? `<span class="badge badge-danger">Phishing</span> <small>(${(email.prediction.probability * 100).toFixed(2)}%)</small>`
-                                      : `<span class="badge badge-success">Benign</span> <small>(${(email.prediction.probability * 100).toFixed(2)}%)</small>`
-                                    : `<span class="badge badge-secondary">Not Analyzed</span>`
-                                }
+                                ${this.renderPredictionBadge(email.prediction)}
                             </td>
                             <td>
                                 <button class="btn btn-sm" onclick="app.viewEmail(${email.id})">View</button>
@@ -958,45 +942,159 @@ class App {
       const response = await api.getEmail(emailId);
       const email = response.data;
 
-      const predictionHtml = email.prediction
-        ? email.prediction.prediction == 1
-          ? `<div class="alert alert-danger">
-                        <strong>⚠️ Phishing Detected!</strong>
-                        <p>Confidence: ${(email.prediction.probability * 100).toFixed(2)}%</p>
-                       </div>`
-          : `<div class="alert alert-success">
-                        <strong>✓ Benign Email</strong>
-                        <p>Confidence: ${(email.prediction.probability * 100).toFixed(2)}%</p>
-                       </div>`
-        : `<div class="prediction-prompt">
-                    <p>This email has not been analyzed yet.</p>
-                    <button class="btn btn-primary" onclick="app.analyzeStoredEmail(${email.id})">Analyze Email</button>
-                   </div>`;
+      // Build prediction HTML with detailed analysis
+      let predictionHtml = '';
+      if (email.prediction) {
+        const pred = email.prediction;
+        const isPhishing = pred.prediction == 1;
+        const classification = pred.classification || (isPhishing ? 'PHISHING' : 'LEGITIMATE');
+        const ensembleScore = pred.ensemble_score || pred.probability;
+        
+        // Determine alert class based on classification
+        let alertClass = 'alert-success'; // LEGITIMATE
+        let alertIcon = '✓';
+        let alertTitle = 'Legitimate Email';
+        
+        if (classification === 'PHISHING') {
+          alertClass = 'alert-danger';
+          alertIcon = '⚠️';
+          alertTitle = 'Phishing Detected!';
+        } else if (classification === 'SUSPICIOUS') {
+          alertClass = 'alert-warning';
+          alertIcon = '⚡';
+          alertTitle = 'Suspicious Email';
+        }
+        
+        // Main alert
+        predictionHtml = `
+          <div class="alert ${alertClass}">
+            <strong>${alertIcon} ${alertTitle}</strong>
+            <p>Classification: <strong>${classification}</strong></p>
+            <p>Confidence: ${(ensembleScore * 100).toFixed(2)}%</p>
+          </div>
+        `;
+        
+        // Try to get detailed analysis
+        try {
+          const detailsResponse = await api.get(`/predictions/details/${pred.id}`);
+          const details = detailsResponse.data;
+          
+          // Features breakdown
+          if (details.features) {
+            const feat = details.features;
+            const senderBadge = feat.sender_risk 
+              ? `<span class="badge badge-${feat.sender_risk === 'TRUSTED' ? 'success' : 'warning'}">${feat.sender_risk}</span>`
+              : '';
+            
+            predictionHtml += `
+              <div class="analysis-details">
+                <h4>📊 Extracted Features</h4>
+                <ul class="features-list">
+                  <li><strong>Links count:</strong> ${feat.links_count || 0}</li>
+                  <li><strong>Has attachment:</strong> ${feat.has_attachment ? 'Yes' : 'No'}</li>
+                  <li><strong>Urgent keywords:</strong> ${feat.urgent_keywords ? 'Yes' : 'No'}</li>
+                  <li><strong>Sender domain:</strong> ${feat.sender_domain || 'N/A'} ${senderBadge}</li>
+                </ul>
+              </div>
+            `;
+          }
+          
+          // Links analysis
+          if (details.links && details.links.length > 0) {
+            const linksRows = details.links.map(link => {
+              const typeBadge = this.getLinkTypeBadge(link.link_type);
+              return `
+                <tr>
+                  <td><code>${link.domain || 'N/A'}</code></td>
+                  <td><span class="badge badge-${typeBadge}">${link.link_type}</span></td>
+                  <td>${(link.risk_score * 100).toFixed(0)}%</td>
+                </tr>
+              `;
+            }).join('');
+            
+            predictionHtml += `
+              <div class="links-analysis">
+                <h4>🔗 Links Analysis (${details.links.length} links)</h4>
+                <div class="links-table">
+                  <table class="table table-sm">
+                    <thead>
+                      <tr>
+                        <th>Domain</th>
+                        <th>Type</th>
+                        <th>Risk</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      ${linksRows}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            `;
+          }
+          
+          // Suspicious segments
+          if (details.suspicious_segments && details.suspicious_segments.length > 0) {
+            const segmentsHtml = details.suspicious_segments.slice(0, 10).map((seg, idx) => {
+              const severityBadge = this.getSeverityBadge(seg.severity);
+              return `
+                <div class="segment-item severity-${seg.severity.toLowerCase()}">
+                  <div class="segment-header">
+                    <span class="segment-number">#${idx + 1}</span>
+                    <span class="segment-severity badge badge-${severityBadge}">${seg.severity}</span>
+                    <span class="segment-score">${seg.score.toFixed(1)}%</span>
+                  </div>
+                  <div class="segment-text">${this.escapeHtml(seg.text)}</div>
+                  <div class="segment-reasons"><small>${seg.reasons}</small></div>
+                </div>
+              `;
+            }).join('');
+            
+            predictionHtml += `
+              <div class="suspicious-segments">
+                <h4>⚠️ Suspicious Text Segments (${details.suspicious_segments.length})</h4>
+                <div class="segments-list">
+                  ${segmentsHtml}
+                </div>
+              </div>
+            `;
+          }
+        } catch (detailsError) {
+          console.log('Could not load detailed analysis:', detailsError);
+        }
+      } else {
+        predictionHtml = `
+          <div class="prediction-prompt">
+            <p>This email has not been analyzed yet.</p>
+            <button class="btn btn-primary" onclick="app.analyzeStoredEmail(${email.id})">Analyze Email</button>
+          </div>
+        `;
+      }
 
       document.getElementById("app-content").innerHTML = `
-                <div class="email-detail">
-                    <div class="email-header">
-                        <h1>${email.subject || "(No Subject)"}</h1>
-                        <div class="email-meta">
-                            <p><strong>From:</strong> ${email.sender || ""}</p>
-                            <p><strong>To:</strong> ${email.recipient || ""}</p>
-                            <p><strong>Date:</strong> ${email.received_at || ""}</p>
-                        </div>
-                    </div>
-                    <div class="email-prediction">
-                        ${predictionHtml}
-                    </div>
-                    <div class="email-body">
-                        <h3>Email Content</h3>
-                        <div class="email-content">
-                            <pre>${email.body || ""}</pre>
-                        </div>
-                    </div>
-                    <div class="email-actions">
-                        <button class="btn btn-secondary" data-page="emails">Back to List</button>
-                    </div>
-                </div>
-            `;
+        <div class="email-detail">
+          <div class="email-header">
+            <h1>${email.subject || "(No Subject)"}</h1>
+            <div class="email-meta">
+              <p><strong>From:</strong> ${email.sender || ""}</p>
+              <p><strong>To:</strong> ${email.recipient || ""}</p>
+              <p><strong>Date:</strong> ${email.received_at || ""}</p>
+            </div>
+          </div>
+          <div class="email-prediction">
+            ${predictionHtml}
+          </div>
+          <div class="email-body">
+            <h3>Email Content</h3>
+            <div class="email-content">
+              <pre>${email.body || ""}</pre>
+            </div>
+          </div>
+          <div class="email-actions">
+            <button class="btn btn-secondary" data-page="emails">Back to List</button>
+          </div>
+        </div>
+      `;
       this.updateNavigation();
     } catch (error) {
       this.showError(
@@ -1137,6 +1235,55 @@ class App {
         messageEl.remove();
       }, 5000);
     }
+  }
+  
+  // Helper methods for rendering analysis details
+  getLinkTypeBadge(type) {
+    const badges = {
+      'TRUSTED': 'success',
+      'NORMAL': 'info',
+      'SHORTENER': 'warning',
+      'IP_BASED': 'danger',
+      'SUSPICIOUS': 'danger'
+    };
+    return badges[type] || 'secondary';
+  }
+  
+  getSeverityBadge(severity) {
+    const badges = {
+      'HIGH': 'danger',
+      'MEDIUM': 'warning',
+      'LOW': 'info'
+    };
+    return badges[severity] || 'secondary';
+  }
+  
+  renderPredictionBadge(prediction) {
+    if (!prediction) {
+      return `<span class="badge badge-secondary">Not Analyzed</span>`;
+    }
+    
+    const classification = prediction.classification || (prediction.prediction == 1 ? 'PHISHING' : 'LEGITIMATE');
+    const score = prediction.ensemble_score || prediction.probability;
+    
+    let badgeClass = 'badge-success';
+    let label = 'LEGITIMATE';
+    
+    if (classification === 'PHISHING') {
+      badgeClass = 'badge-danger';
+      label = 'PHISHING';
+    } else if (classification === 'SUSPICIOUS') {
+      badgeClass = 'badge-warning';
+      label = 'SUSPICIOUS';
+    }
+    
+    return `<span class="badge ${badgeClass}">${label}</span> <small>(${(score * 100).toFixed(2)}%)</small>`;
+  }
+  
+  escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
   }
 }
 

@@ -16,7 +16,11 @@ class User:
                 'INSERT INTO users (email) VALUES (?)',
                 (email,)
             )
-            return User.get_by_id(cursor.lastrowid)
+            user_id = cursor.lastrowid
+            # Fetch the created record in the same connection
+            cursor.execute('SELECT * FROM users WHERE id = ?', (user_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
     
     @staticmethod
     def get_by_id(user_id: int) -> dict | None:

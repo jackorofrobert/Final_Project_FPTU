@@ -70,8 +70,8 @@ async def fetch_user_email(access_token: str) -> Optional[str]:
 
 
 def get_flow():
-    """Create OAuth2 flow instance."""
-    return Flow.from_client_config(
+    """Create OAuth2 flow instance with PKCE support."""
+    flow = Flow.from_client_config(
         {
             "web": {
                 "client_id": settings.GMAIL_CLIENT_ID,
@@ -84,6 +84,9 @@ def get_flow():
         scopes=SCOPES,
         redirect_uri=settings.GMAIL_REDIRECT_URI
     )
+    # Enable PKCE for enhanced security (required by Google for some apps)
+    flow.code_verifier = None  # Let the library generate it automatically
+    return flow
 
 
 @router.get(
@@ -186,12 +189,20 @@ async def connect(request: Request):
     try:
         flow = get_flow()
         logger.debug(f'OAuth2 scopes requested: {SCOPES} [request_id={request_id}]')
+        
+        # Generate authorization URL with PKCE
         authorization_url, state = flow.authorization_url(
             access_type='offline',
             prompt='consent',  # Force consent screen to ensure refresh_token is returned
             include_granted_scopes='true'
         )
+        
+        # Store state and code_verifier in session for callback verification
         request.session['oauth_state'] = state
+        if hasattr(flow, 'code_verifier') and flow.code_verifier:
+            request.session['code_verifier'] = flow.code_verifier
+            logger.debug(f'PKCE code_verifier stored in session [request_id={request_id}]')
+        
         logger.info(f'OAuth2 flow initiated successfully [state={state[:8]}...] [scopes={len(SCOPES)}] [prompt=consent] [request_id={request_id}]')
         return success_response(data={
             'authorization_url': authorization_url,
@@ -280,6 +291,12 @@ async def callback(
         
         flow = get_flow()
         
+        # Restore code_verifier from session if it exists (for PKCE)
+        code_verifier = request.session.get('code_verifier')
+        if code_verifier:
+            flow.code_verifier = code_verifier
+            logger.debug(f'PKCE code_verifier restored from session [request_id={request_id}]')
+        
         # Build the full callback URL
         callback_url = str(request.url)
         
@@ -352,11 +369,18 @@ async def callback(
         request.session['user_id'] = user['id']
         request.session['user_email'] = user['email']
         
+        # Clean up OAuth flow data from session
+        request.session.pop('oauth_state', None)
+        request.session.pop('code_verifier', None)
+        
         logger.info(f'OAuth2 callback successful: User authenticated [user_id={user["id"]}] [user_email={user["email"]}] [request_id={request_id}]')
         base_url = str(request.base_url).rstrip('/')
         return RedirectResponse(url=f'{base_url}/#auth-success')
     except Exception as e:
         logger.error(f'OAuth2 callback failed [request_id={request_id}]: {str(e)}', exc_info=True)
+        # Clean up OAuth flow data on error
+        request.session.pop('oauth_state', None)
+        request.session.pop('code_verifier', None)
         base_url = str(request.base_url).rstrip('/')
         return RedirectResponse(url=f'{base_url}/#auth-error={str(e)}')
 

@@ -18,7 +18,11 @@ class OAuthToken:
                    VALUES (?, ?, ?, ?)''',
                 (user_id, token, refresh_token, expires_at)
             )
-            return OAuthToken.get_by_id(cursor.lastrowid)
+            token_id = cursor.lastrowid
+            # Fetch the created record in the same connection
+            cursor.execute('SELECT * FROM oauth_tokens WHERE id = ?', (token_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
     
     @staticmethod
     def get_by_id(token_id: int) -> dict | None:

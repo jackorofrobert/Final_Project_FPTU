@@ -210,6 +210,17 @@ python scripts/show_features.py --file samples/test.txt
 
 ## 9. Environment Setup
 
+### Using uv (Recommended - Fast)
+```bash
+# Install uv
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Install dependencies
+uv venv
+uv pip install -e .
+```
+
+### Using pip (Traditional)
 ```bash
 pip install -r requirements.txt
 ```
@@ -218,9 +229,39 @@ pip install -r requirements.txt
 
 ## 10. Running the Application
 
+### Quick Start
 ```bash
-python -m app
+# Initialize database
+make init-db
+
+# Run server
+make run
 ```
+
+### Manual Start
+```bash
+# Initialize database
+python scripts/init_database.py
+
+# Run server
+python run.py
+```
+
+### Access API
+- API Documentation: http://localhost:8000/docs
+- Alternative Docs: http://localhost:8000/redoc
+- Frontend: http://localhost:8000
+
+### Testing
+```bash
+# Test API endpoints
+make test-api
+
+# Generate OpenAPI schema
+make generate-openapi
+```
+
+For detailed API documentation, see [README_API.md](README_API.md) and [QUICKSTART.md](QUICKSTART.md)
 
 ---
 

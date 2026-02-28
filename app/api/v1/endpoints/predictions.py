@@ -125,12 +125,13 @@ async def analyze(
             )
             email_id = email_record['id']
             
-            # Save prediction
+            # Save prediction with full details
             EmailService.create_prediction(
                 email_id,
                 result['prediction'],
                 result['probability'],
-                PredictionService.get_model_version()
+                PredictionService.get_model_version(),
+                result
             )
             logger.info(f'Prediction saved to database [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]')
         
@@ -145,7 +146,8 @@ async def analyze(
             'is_phishing': result['classification'] == 'PHISHING',
             'is_suspicious': result['classification'] == 'SUSPICIOUS',
             'features': result.get('features', {}),
-            'formula_details': result.get('formula_details', {})
+            'formula_details': result.get('formula_details', {}),
+            'suspicious_segments': result.get('suspicious_segments', [])
         }, message='Email analyzed successfully')
     except Exception as e:
         logger.error(f'Error analyzing email [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
@@ -258,12 +260,13 @@ async def analyze_email(
             f'[email_id={email_id}] [user_id={user_id}] [request_id={request_id}]'
         )
         
-        # Save prediction
+        # Save prediction with full details
         prediction = EmailService.create_prediction(
             email_id,
             result['prediction'],
             result['probability'],
-            PredictionService.get_model_version()
+            PredictionService.get_model_version(),
+            result
         )
         
         logger.info(f'Email prediction saved [email_id={email_id}] [prediction_id={prediction["id"]}] [user_id={user_id}] [request_id={request_id}]')
@@ -276,3 +279,103 @@ async def analyze_email(
     except Exception as e:
         logger.error(f'Error analyzing email [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
         return error_response(error=str(e), message='Error analyzing email', status_code=500)
+
+
+@router.get(
+    "/details/{prediction_id}",
+    summary="Get prediction details",
+    description="Get detailed analysis breakdown for a prediction including features, links analysis, and suspicious segments. Requires authentication and ownership of the prediction.",
+    responses={
+        200: {
+            "description": "Prediction details retrieved successfully",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "success": True,
+                        "data": {
+                            "prediction": {
+                                "id": 1,
+                                "email_id": 123,
+                                "prediction": 1,
+                                "probability": 0.95,
+                                "ensemble_score": 0.87,
+                                "classification": "PHISHING"
+                            },
+                            "features": {
+                                "links_count": 12,
+                                "has_attachment": 0,
+                                "urgent_keywords": 1,
+                                "sender_domain": "linkedin.com",
+                                "sender_risk": "SUSPICIOUS"
+                            },
+                            "links": [
+                                {
+                                    "url": "https://linkedin.com/jobs",
+                                    "domain": "linkedin.com",
+                                    "link_type": "NORMAL",
+                                    "risk_score": 0.1
+                                }
+                            ],
+                            "suspicious_segments": [
+                                {
+                                    "text": "Manage job alerts: https://www",
+                                    "score": 50.0,
+                                    "severity": "MEDIUM",
+                                    "reasons": "Từ khóa khẩn cấp: alert, Chứa 1 link"
+                                }
+                            ]
+                        }
+                    }
+                }
+            }
+        },
+        401: {
+            "description": "Authentication required or access denied"
+        },
+        404: {
+            "description": "Prediction not found"
+        }
+    },
+    tags=["Predictions"]
+)
+async def get_prediction_details(
+    request: Request,
+    prediction_id: int,
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """
+    Get detailed prediction analysis.
+    
+    Returns complete breakdown of the prediction including:
+    - Extracted features (links, attachments, keywords, domain)
+    - Links analysis with risk scores
+    - Suspicious text segments with severity levels
+    - Formula details and score breakdown
+    
+    **Path Parameters:**
+    - `prediction_id`: The ID of the prediction to retrieve details for
+    """
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    
+    try:
+        logger.info(f'Prediction details requested [prediction_id={prediction_id}] [user_id={user_id}] [request_id={request_id}]')
+        
+        # Get prediction details
+        details = EmailService.get_prediction_details(prediction_id)
+        
+        if not details or not details['prediction']:
+            logger.warning(f'Prediction not found [prediction_id={prediction_id}] [user_id={user_id}] [request_id={request_id}]')
+            return not_found_response('Prediction not found')
+        
+        # Verify ownership
+        email_id = details['prediction']['email_id']
+        email = EmailService.get_email_by_id(email_id)
+        if not email or email['user_id'] != user_id:
+            logger.warning(f'Prediction access denied [prediction_id={prediction_id}] [user_id={user_id}] [request_id={request_id}]')
+            return unauthorized_response('Access denied')
+        
+        logger.info(f'Prediction details retrieved [prediction_id={prediction_id}] [user_id={user_id}] [request_id={request_id}]')
+        return success_response(data=details)
+    except Exception as e:
+        logger.error(f'Error retrieving prediction details [prediction_id={prediction_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
+        return error_response(error=str(e), message='Error retrieving prediction details', status_code=500)

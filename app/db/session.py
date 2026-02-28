@@ -108,9 +108,59 @@ def init_db():
                     email_id INTEGER NOT NULL,
                     prediction INTEGER NOT NULL,
                     probability REAL NOT NULL,
+                    ensemble_score REAL,
+                    classification TEXT,
+                    threshold REAL,
+                    suspicious_margin REAL,
                     model_version TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (email_id) REFERENCES emails(id) ON DELETE CASCADE
+                )
+            ''')
+            
+            # Create prediction_features table (extracted features)
+            logger.debug('Creating prediction_features table')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS prediction_features (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    prediction_id INTEGER NOT NULL,
+                    links_count INTEGER,
+                    has_attachment INTEGER,
+                    urgent_keywords INTEGER,
+                    sender_domain TEXT,
+                    sender_risk TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE
+                )
+            ''')
+            
+            # Create prediction_links table (detailed link analysis)
+            logger.debug('Creating prediction_links table')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS prediction_links (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    prediction_id INTEGER NOT NULL,
+                    url TEXT NOT NULL,
+                    domain TEXT,
+                    link_type TEXT,
+                    risk_score REAL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE
+                )
+            ''')
+            
+            # Create suspicious_segments table (text segments analysis)
+            logger.debug('Creating suspicious_segments table')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS suspicious_segments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    prediction_id INTEGER NOT NULL,
+                    text TEXT NOT NULL,
+                    score REAL NOT NULL,
+                    severity TEXT,
+                    reasons TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (prediction_id) REFERENCES predictions(id) ON DELETE CASCADE
                 )
             ''')
             
@@ -120,6 +170,9 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_emails_gmail_id ON emails(gmail_message_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_predictions_email_id ON predictions(email_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_oauth_tokens_user_id ON oauth_tokens(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_prediction_features_prediction_id ON prediction_features(prediction_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_prediction_links_prediction_id ON prediction_links(prediction_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_suspicious_segments_prediction_id ON suspicious_segments(prediction_id)')
             
         logger.info(f'Database initialization completed [db_path={db_path}]')
     except Exception as e:

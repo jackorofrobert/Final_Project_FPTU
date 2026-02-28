@@ -7,17 +7,25 @@ class Prediction:
     """Prediction model representing the predictions table."""
     
     @staticmethod
-    def create(email_id: int, prediction: int, probability: float, model_version: str = None) -> dict:
+    def create(email_id: int, prediction: int, probability: float, model_version: str = None,
+               ensemble_score: float = None, classification: str = None, threshold: float = None,
+               suspicious_margin: float = None) -> dict:
         """Create a new prediction record."""
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 '''INSERT INTO predictions 
-                   (email_id, prediction, probability, model_version) 
-                   VALUES (?, ?, ?, ?)''',
-                (email_id, prediction, probability, model_version)
+                   (email_id, prediction, probability, ensemble_score, classification, 
+                    threshold, suspicious_margin, model_version) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                (email_id, prediction, probability, ensemble_score, classification, 
+                 threshold, suspicious_margin, model_version)
             )
-            return Prediction.get_by_id(cursor.lastrowid)
+            prediction_id = cursor.lastrowid
+            # Fetch the created record in the same connection
+            cursor.execute('SELECT * FROM predictions WHERE id = ?', (prediction_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
     
     @staticmethod
     def get_by_id(prediction_id: int) -> dict | None:

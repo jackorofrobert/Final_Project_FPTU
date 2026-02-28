@@ -21,7 +21,11 @@ class Email:
                        VALUES (?, ?, ?, ?, ?, ?, ?)''',
                     (user_id, gmail_message_id, subject, sender, recipient, body, received_at)
                 )
-                return Email.get_by_id(cursor.lastrowid)
+                email_id = cursor.lastrowid
+                # Fetch the created record in the same connection
+                cursor.execute('SELECT * FROM emails WHERE id = ?', (email_id,))
+                row = cursor.fetchone()
+                return dict(row) if row else None
             except sqlite3.IntegrityError:
                 # Email already exists (duplicate gmail_message_id for same user)
                 return Email.get_by_gmail_id(user_id, gmail_message_id)

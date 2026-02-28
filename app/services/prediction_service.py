@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 from src.text_cleaning import normalize_text, count_urls, detect_urgent_keywords, extract_sender_domain
 from src.features import prepare_features, calculate_ensemble_score
 from src.config import SUSPICIOUS_MARGIN
+from src.predict import analyze_suspicious_segments
 
 logger = get_logger(__name__)
 
@@ -129,6 +130,21 @@ class PredictionService:
             ensemble_score = ensemble_result['ensemble_score']
             formula_details = ensemble_result['formula_details']
             
+            # Analyze suspicious segments
+            suspicious_segments = analyze_suspicious_segments(raw_text, cls._model, cls._threshold)
+            
+            # Add severity levels to segments
+            for segment in suspicious_segments:
+                score = segment['score']
+                if score >= 70:
+                    segment['severity'] = 'HIGH'
+                elif score >= 40:
+                    segment['severity'] = 'MEDIUM'
+                else:
+                    segment['severity'] = 'LOW'
+                # Convert reasons list to string
+                segment['reasons'] = ', '.join(segment['reasons']) if segment['reasons'] else ''
+            
             # Multi-level classification based on how much score exceeds threshold
             classification = cls._classify_threat_level(ensemble_score)
             pred = 0 if classification == CLASS_LEGITIMATE else 1
@@ -148,7 +164,8 @@ class PredictionService:
                     'has_attachment': has_attachment,
                     'urgent_keywords': urgent_keywords,
                     'sender_domain': sender_domain
-                }
+                },
+                'suspicious_segments': suspicious_segments
             }
         except Exception as e:
             logger.error(f'Error during prediction: {str(e)}', exc_info=True)
