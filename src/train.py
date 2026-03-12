@@ -201,16 +201,34 @@ def main():
     # 1. Cache all incoming datasets
     cache_incoming_datasets(incoming, history)
 
-    # 2. Load all historical datasets
-    df = load_history_datasets(history)
+    # 2. Load datasets with 70% Merged + 30% Balanced blend
+    merged_path = incoming / "Merged_Dataset.csv"
+    balanced_path = incoming / "Balanced_Dataset.csv"
+
+    if merged_path.exists() and balanced_path.exists():
+        print("[LOAD] Loading Merged_Dataset.csv ...")
+        df_merged = load_any(merged_path)
+        df_merged.columns = [c.strip().lower() for c in df_merged.columns]
+
+        print("[LOAD] Loading Balanced_Dataset.csv ...")
+        df_balanced = load_any(balanced_path)
+        df_balanced.columns = [c.strip().lower() for c in df_balanced.columns]
+
+        # 70/30 blend: sample Merged so that Balanced = 30% of final dataset
+        n_balanced = len(df_balanced)
+        n_merged_target = int(n_balanced * (70 / 30))
+        n_merged_sample = min(n_merged_target, len(df_merged))
+        df_merged_sampled = df_merged.sample(n=n_merged_sample, random_state=42)
+
+        df = pd.concat([df_merged_sampled, df_balanced], ignore_index=True).sample(frac=1, random_state=42)
+        print(f"[BLEND] Merged sample: {n_merged_sample:,} (70%) | Balanced: {n_balanced:,} (30%)")
+        print(f"[BLEND] Total training pool: {len(df):,} rows")
+    else:
+        # Fallback: use history cache
+        df = load_history_datasets(history)
 
     # 3. Normalize column names
     df.columns = [c.strip().lower() for c in df.columns]
-
-    # Deduplicate by body to avoid double-counting (Balanced is a subset of Merged)
-    before = len(df)
-    df = df.drop_duplicates(subset=['body'], keep='last')
-    print(f"[DEDUP] Removed {before - len(df):,} duplicate rows -> {len(df):,} unique emails")
 
     # 4. Resolve / build text column
     text_col = build_text_column(df, args.text_col.lower())

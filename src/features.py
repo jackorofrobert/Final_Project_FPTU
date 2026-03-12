@@ -63,13 +63,19 @@ def build_feature_pipeline():
         remainder='drop'  # Drop any columns not specified
     )
     
-    # XGBoost classifier
+    # XGBoost classifier — tuned for phishing detection
+    # More trees + lower lr = better generalization on unseen phishing patterns
+    # Regularization prevents overfitting on 1998-2008 training data
     clf = XGBClassifier(
-        n_estimators=200,
-        max_depth=6,
-        learning_rate=0.1,
+        n_estimators=400,
+        max_depth=5,
+        learning_rate=0.05,
         subsample=0.8,
-        colsample_bytree=0.8,
+        colsample_bytree=0.7,
+        min_child_weight=5,
+        gamma=0.1,
+        reg_alpha=0.1,
+        reg_lambda=1.5,
         eval_metric="logloss",
         use_label_encoder=False,
         random_state=42
@@ -392,11 +398,12 @@ def calculate_ensemble_score(
                 'reason': 'Domain trusted' if trusted else 'Domain bình thường'
             })
     
-    # Weights
-    W_MODEL = 0.70
-    W_URGENT = 0.12
-    W_LINKS = 0.105
-    W_DOMAIN = 0.075
+    # Weights — model gets 55% since dataset (1998-2008) misses modern phishing patterns;
+    # feature-based signals (keywords, links, domain) compensate for model blind spots
+    W_MODEL = 0.55
+    W_URGENT = 0.20
+    W_LINKS = 0.15
+    W_DOMAIN = 0.10
     
     # Weighted contributions
     model_contrib = model_proba * W_MODEL
@@ -440,8 +447,8 @@ def calculate_ensemble_score(
                 'description': f'Sender risk ({domain_type}): {domain_risk:.4f} × {W_DOMAIN:.1%} = {domain_contrib:.4f}'
             },
             'formula_text': (
-                f'Ensemble = {model_proba:.4f}×70% + {urgent_risk:.0f}×12% + '
-                f'{links_risk:.4f}×10.5% + {domain_risk:.4f}(Sender)×7.5% = {ensemble_score:.4f}'
+                f'Ensemble = {model_proba:.4f}×55% + {urgent_risk:.0f}×20% + '
+                f'{links_risk:.4f}×15% + {domain_risk:.4f}(Sender)×10% = {ensemble_score:.4f}'
             )
         }
     }
