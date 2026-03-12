@@ -35,8 +35,8 @@ if invalid_count > 0:
     print(f"Clean dataset rows: {len(df_clean):,}")
     print(f"Removed: {len(df) - len(df_clean):,} rows")
     
-    # Save cleaned dataset
-    output_path = 'data/incoming/Merged_Dataset_Clean.csv'
+    # Save cleaned dataset back to Merged_Dataset.csv (in-place clean)
+    output_path = 'data/incoming/Merged_Dataset.csv'
     df_clean.to_csv(output_path, index=False)
     print(f"\nSaved cleaned dataset to: {output_path}")
     

@@ -13,8 +13,8 @@ import sys
 sys.stdout.reconfigure(encoding='utf-8')
 
 # Load dataset
-print("Loading Dataset_Ready.csv...")
-df = pd.read_csv('data/incoming/Dataset_Ready.csv')
+print("Loading Merged_Dataset.csv...")
+df = pd.read_csv('data/incoming/Merged_Dataset.csv')
 
 print(f"\n{'='*70}")
 print(f"DATASET INFO: {len(df):,} rows, {len(df.columns)} columns")

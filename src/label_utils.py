@@ -27,4 +27,4 @@ def normalize_label(value):
     if v in legitimate_keywords:
         return 0
 
-    raise ValueError(f"Unknown label value: {value}")
+    return None  # Unknown labels will be dropped by caller

@@ -207,6 +207,11 @@ def main():
     # 3. Normalize column names
     df.columns = [c.strip().lower() for c in df.columns]
 
+    # Deduplicate by body to avoid double-counting (Balanced is a subset of Merged)
+    before = len(df)
+    df = df.drop_duplicates(subset=['body'], keep='last')
+    print(f"[DEDUP] Removed {before - len(df):,} duplicate rows -> {len(df):,} unique emails")
+
     # 4. Resolve / build text column
     text_col = build_text_column(df, args.text_col.lower())
 
@@ -223,11 +228,36 @@ def main():
     required_cols = [label_col] + FEATURE_COLS
     df = df[required_cols].dropna()
 
-    # 9. Normalize labels
+    # 9. Normalize labels — drop rows with empty/whitespace-only labels first
+    df = df[df[label_col].astype(str).str.strip() != '']
+    df = df[df[label_col].notna()]
     df[label_col] = df[label_col].apply(normalize_label)
+    before_drop = len(df)
+    df = df[df[label_col].notna()]
+    if before_drop != len(df):
+        print(f"[LABEL] Dropped {before_drop - len(df):,} rows with unrecognized labels")
 
-    print("\nLabel distribution after normalization:")
-    print(df[label_col].value_counts())
+    print("\nLabel distribution after normalization (before balancing):")
+    label_dist = df[label_col].value_counts()
+    print(label_dist)
+
+    # Balance dataset: downsample majority class (legit) to match minority (phishing)
+    # This replicates the Balanced Dataset strategy from the docs:
+    # "down-sampled version where legit emails were reduced to match phishing count"
+    phishing_df = df[df[label_col] == 1]
+    legit_df = df[df[label_col] == 0]
+    n_phishing = len(phishing_df)
+    n_legit = len(legit_df)
+
+    if n_legit > n_phishing:
+        legit_sampled = legit_df.sample(n=n_phishing, random_state=42)
+        df = pd.concat([legit_sampled, phishing_df], ignore_index=True).sample(frac=1, random_state=42)
+        print(f"\n[BALANCE] Downsampled legit: {n_legit:,} → {n_phishing:,}")
+        print(f"[BALANCE] Final balanced dataset: {len(df):,} rows (50/50 split)")
+    else:
+        print(f"\n[BALANCE] Dataset already balanced: legit={n_legit:,} | phishing={n_phishing:,}")
+
+    scale_pos_weight = 1.0  # Already balanced manually
 
     print("\nFeature columns used:")
     for col in FEATURE_COLS:
@@ -244,8 +274,9 @@ def main():
     print(f"\nTraining samples: {len(X_train)}")
     print(f"Testing samples: {len(X_test)}")
 
-    # 11. Train model
+    # 11. Train model (inject scale_pos_weight for imbalanced classes)
     pipeline = build_feature_pipeline()
+    pipeline.set_params(clf__scale_pos_weight=scale_pos_weight)
     pipeline.fit(X_train, y_train)
 
     # 12. Find optimal threshold using F1 score
@@ -297,6 +328,9 @@ def main():
                 "optimal_threshold": best_threshold,
                 "optimal_f1_score": round(best_f1, 4),
                 "label_distribution": y.value_counts().to_dict(),
+                "n_phishing": n_phishing,
+                "n_legit_original": n_legit,
+                "n_legit_after_balance": n_phishing if n_legit > n_phishing else n_legit,
             },
             f,
             indent=2,
