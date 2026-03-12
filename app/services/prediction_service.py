@@ -14,7 +14,7 @@ from app.utils.logger import get_logger
 # Add src directory to path to import existing ML code
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 
-from src.text_cleaning import normalize_text, count_urls, detect_urgent_keywords, extract_sender_domain
+from src.text_cleaning import normalize_text, count_urls, detect_urgent_keywords, extract_sender_domain, exclamation_count as count_exclamation, length_chars
 from src.features import prepare_features, calculate_ensemble_score
 from src.config import SUSPICIOUS_MARGIN
 from src.predict import analyze_suspicious_segments
@@ -106,13 +106,20 @@ class PredictionService:
             if has_attachment is None:
                 has_attachment = 0  # Cannot detect from text
             
+            # Calculate text-based features
+            body_len = length_chars(raw_text)
+            excl_count = count_exclamation(raw_text)
+            logger.debug(f'Calculated body_length={body_len}, exclamation_count={excl_count}')
+            
             # Prepare features DataFrame
             X = prepare_features(
                 text=normalized_text,
                 has_attachment=has_attachment,
                 links_count=links_count,
                 sender_domain=sender_domain,
-                urgent_keywords=urgent_keywords
+                urgent_keywords=urgent_keywords,
+                body_length=body_len,
+                exclamation_count=excl_count
             )
             
             # Predict using pipeline
