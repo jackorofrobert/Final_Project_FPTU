@@ -7,11 +7,21 @@ _email_re = re.compile(r"[\w\.-]+@([\w\.-]+\.\w+)", re.IGNORECASE)
 
 # Urgent keywords commonly found in phishing emails
 URGENT_KEYWORDS = [
+    # Classic urgency
     'urgent', 'immediately', 'action required', 'act now', 'suspend',
     'verify', 'confirm', 'expire', 'limited time', 'final notice',
     'warning', 'alert', 'security', 'locked', 'disabled', 'blocked',
     'unauthorized', 'suspicious', 'unusual', 'violation', 'risk',
-    '24 hours', '48 hours', 'deadline', 'asap', 'important'
+    '24 hours', '48 hours', 'deadline', 'asap', 'important',
+    # Reward/prize phishing (e.g. fake airline vouchers, lottery)
+    'voucher', 'prize', 'reward', 'claim', 'redeem', 'winner', 'won',
+    'gift card', 'free', 'congratulations', 'selected', 'eligible',
+    # Account/credential harvesting
+    'login', 'log in', 'sign in', 'password', 'credential', 'update your',
+    'click here', 'click below', 'click the link',
+    # Financial
+    'refund', 'invoice', 'payment', 'billing', 'credit card', 'bank account',
+    'wire transfer', 'transaction',
 ]
 
 def strip_html(text: str) -> str:

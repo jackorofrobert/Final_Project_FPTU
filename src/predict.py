@@ -233,10 +233,12 @@ def main():
     # Predict
     proba_phishing = float(model.predict_proba(X)[0][1])
     
-    # Extract link domains for trusted check
+    # Extract full URLs and domains for risk scoring
     from .text_cleaning import extract_link_domains
+    import re as _re
+    urls = _re.findall(r'(https?://\S+|www\.\S+)', raw_text, _re.IGNORECASE)
     link_domains = extract_link_domains(raw_text)
-    
+
     # Calculate ensemble score (now returns dict)
     ensemble_result = calculate_ensemble_score(
         model_proba=proba_phishing,
@@ -244,7 +246,8 @@ def main():
         links_count=int(X['links_count'].iloc[0]),
         sender_domain=X['sender_domain'].iloc[0],
         has_attachment=int(X['has_attachment'].iloc[0]),
-        link_domains=link_domains
+        link_domains=link_domains,
+        urls=urls,
     )
     
     ensemble_score = ensemble_result['ensemble_score']

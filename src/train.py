@@ -237,27 +237,16 @@ def main():
     if before_drop != len(df):
         print(f"[LABEL] Dropped {before_drop - len(df):,} rows with unrecognized labels")
 
-    print("\nLabel distribution after normalization (before balancing):")
+    print("\nLabel distribution after normalization:")
     label_dist = df[label_col].value_counts()
     print(label_dist)
 
-    # Balance dataset: downsample majority class (legit) to match minority (phishing)
-    # This replicates the Balanced Dataset strategy from the docs:
-    # "down-sampled version where legit emails were reduced to match phishing count"
-    phishing_df = df[df[label_col] == 1]
-    legit_df = df[df[label_col] == 0]
-    n_phishing = len(phishing_df)
-    n_legit = len(legit_df)
-
-    if n_legit > n_phishing:
-        legit_sampled = legit_df.sample(n=n_phishing, random_state=42)
-        df = pd.concat([legit_sampled, phishing_df], ignore_index=True).sample(frac=1, random_state=42)
-        print(f"\n[BALANCE] Downsampled legit: {n_legit:,} → {n_phishing:,}")
-        print(f"[BALANCE] Final balanced dataset: {len(df):,} rows (50/50 split)")
-    else:
-        print(f"\n[BALANCE] Dataset already balanced: legit={n_legit:,} | phishing={n_phishing:,}")
-
-    scale_pos_weight = 1.0  # Already balanced manually
+    # Use scale_pos_weight to handle class imbalance without discarding legit data
+    # Keeps full dataset diversity (Merged breadth + Balanced phishing variety)
+    n_legit = int(label_dist.get(0, 1))
+    n_phishing = int(label_dist.get(1, 1))
+    scale_pos_weight = round(n_legit / n_phishing, 4)
+    print(f"\n[BALANCE] legit={n_legit:,} | phishing={n_phishing:,} | scale_pos_weight={scale_pos_weight}")
 
     print("\nFeature columns used:")
     for col in FEATURE_COLS:
@@ -329,8 +318,8 @@ def main():
                 "optimal_f1_score": round(best_f1, 4),
                 "label_distribution": y.value_counts().to_dict(),
                 "n_phishing": n_phishing,
-                "n_legit_original": n_legit,
-                "n_legit_after_balance": n_phishing if n_legit > n_phishing else n_legit,
+                "n_legit": n_legit,
+                "scale_pos_weight": scale_pos_weight,
             },
             f,
             indent=2,
