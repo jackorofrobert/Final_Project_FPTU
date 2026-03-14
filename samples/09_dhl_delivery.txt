@@ -1,0 +1,23 @@
+Subject: DHL Shipment Notification - Package Delivery Failed
+
+---
+
+Dear Customer,
+
+We attempted to deliver your package today but were unable to complete the delivery. Your package is being held at our distribution center.
+
+Tracking Number: DHL-2847391056
+Status: Delivery Failed - Address Verification Required
+Estimated Weight: 2.3 kg
+Sender: International Shipment
+
+To reschedule your delivery, please confirm your shipping address and pay the redelivery fee of $1.99 by clicking the link below:
+
+http://dhl-redelivery-schedule.com/track?id=DHL-2847391056
+
+If you do not schedule a redelivery within 5 days, the package will be returned to the sender.
+
+Thank you for choosing DHL.
+
+DHL Express
+© 2025 DHL International GmbH. All Rights Reserved.

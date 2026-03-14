@@ -1,0 +1,26 @@
+Subject: Suspicious Transaction Detected on Your Account - Action Required!
+
+---
+
+Dear Wells Fargo Customer,
+
+ALERT: We have detected a suspicious transaction on your Wells Fargo checking account ending in **4821.
+
+Transaction Details:
+- Amount: $2,847.00
+- Merchant: WIRE TRANSFER - INTERNATIONAL
+- Date: March 14, 2025
+- Location: Lagos, Nigeria
+
+If you did NOT authorize this transaction, you must act immediately to prevent further unauthorized charges. Click the link below to report this transaction and secure your account:
+
+http://wellsfargo-secure-alert.com/fraud/report?acct=4821
+
+If you authorized this transaction, no action is needed.
+
+IMPORTANT: Do not ignore this alert. Failure to respond within 12 hours will be considered as authorization of this transaction.
+
+Thank you,
+Wells Fargo Fraud Protection Team
+Wells Fargo & Company
+NMLS ID 399801

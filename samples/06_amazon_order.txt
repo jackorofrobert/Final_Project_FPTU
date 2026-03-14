@@ -1,0 +1,25 @@
+Subject: Your Amazon Order #112-9374625-8271635 has been confirmed!
+
+---
+
+Hello,
+
+Thank you for your order! We are writing to confirm that we have received your order.
+
+Order Details:
+- Order #: 112-9374625-8271635
+- Item: Apple MacBook Pro 16" M3 Max (1TB) - Space Black
+- Quantity: 1
+- Price: $3,499.00
+- Shipping: Express (1-2 business days)
+- Delivery Address: 742 Evergreen Terrace, Springfield, IL
+
+If you did NOT place this order, please cancel it immediately by clicking the link below:
+
+http://amazon-order-cancel.com/orders/cancel?id=112-9374625-8271635
+
+You must cancel within 1 hour or the item will be shipped and your credit card will be charged.
+
+Thank you for shopping with Amazon!
+
+Amazon.com Customer Service
