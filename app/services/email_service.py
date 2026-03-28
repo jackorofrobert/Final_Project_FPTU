@@ -20,6 +20,11 @@ class EmailService:
         return email
     
     @staticmethod
+    def get_email_by_gmail_id(user_id: int, gmail_message_id: str) -> dict | None:
+        """Get email by user ID and Gmail message ID."""
+        return Email.get_by_gmail_id(user_id, gmail_message_id)
+
+    @staticmethod
     def get_email_by_id(email_id: int) -> dict | None:
         """Get email by ID."""
         logger.debug(f'Retrieving email by ID [email_id={email_id}]')

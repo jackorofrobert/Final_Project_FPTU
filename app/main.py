@@ -17,9 +17,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import FileResponse
 
+from contextlib import asynccontextmanager
+
 from app.api.v1.endpoints import auth, emails, predictions, history
 from app.core.config import settings
 from app.db.session import init_db
+from app.services.scheduler_service import start_scheduler, stop_scheduler
 from app.utils.api_response import not_found_response, server_error_response
 from app.utils.logger import setup_logging, get_logger
 
@@ -28,10 +31,19 @@ setup_logging()
 logger = get_logger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage startup/shutdown: start scheduler on boot, stop on exit."""
+    start_scheduler()
+    yield
+    stop_scheduler()
+
+
 def create_app() -> FastAPI:
     """Application factory pattern for creating FastAPI app instances."""
     
     app = FastAPI(
+        lifespan=lifespan,
         title="Phishing Email Detection API",
         description="""
         REST API for phishing email detection system with ML-based analysis.

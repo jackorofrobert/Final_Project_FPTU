@@ -55,26 +55,38 @@ class GmailService:
         return build('gmail', 'v1', credentials=creds)
     
     @staticmethod
-    def fetch_emails(user_id: int, max_results: int = 50) -> list[dict]:
+    def fetch_emails(user_id: int, max_results: int = 50, after: str = None) -> list[dict]:
         """
         Fetch recent emails from Gmail.
         
         Args:
             user_id: User ID
             max_results: Maximum number of emails to fetch
+            after: ISO timestamp — only fetch emails received after this time
             
         Returns:
             List of email dictionaries with fields: id, subject, sender, recipient, body, received_at
         """
         try:
-            logger.info(f'Fetching emails from Gmail API [user_id={user_id}] [max_results={max_results}]')
+            query = None
+            if after:
+                try:
+                    after_dt = datetime.fromisoformat(after)
+                    epoch_seconds = int(after_dt.timestamp())
+                    query = f'after:{epoch_seconds}'
+                    logger.info(f'Using incremental fetch query: {query} [user_id={user_id}]')
+                except (ValueError, TypeError):
+                    logger.warning(f'Invalid after timestamp, fetching all [user_id={user_id}] [after={after}]')
+            
+            logger.info(f'Fetching emails from Gmail API [user_id={user_id}] [max_results={max_results}] [query={query}]')
             service = GmailService.get_service(user_id)
             
             # List messages
-            results = service.users().messages().list(
-                userId='me',
-                maxResults=max_results
-            ).execute()
+            list_kwargs = dict(userId='me', maxResults=max_results)
+            if query:
+                list_kwargs['q'] = query
+            
+            results = service.users().messages().list(**list_kwargs).execute()
             
             messages = results.get('messages', [])
             logger.info(f'Gmail API returned {len(messages)} messages [user_id={user_id}]')

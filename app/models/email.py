@@ -72,3 +72,18 @@ class Email:
             cursor = conn.cursor()
             cursor.execute('SELECT COUNT(*) FROM emails WHERE user_id = ?', (user_id,))
             return cursor.fetchone()[0]
+
+    @staticmethod
+    def get_unanalyzed_by_user_id(user_id: int, limit: int = 50) -> list[dict]:
+        """Get emails that have no prediction yet, oldest first."""
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT e.* FROM emails e
+                   LEFT JOIN predictions p ON e.id = p.email_id
+                   WHERE e.user_id = ? AND p.id IS NULL
+                   ORDER BY e.received_at ASC
+                   LIMIT ?''',
+                (user_id, limit)
+            )
+            return [dict(row) for row in cursor.fetchall()]

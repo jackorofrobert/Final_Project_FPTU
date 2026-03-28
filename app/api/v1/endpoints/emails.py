@@ -4,7 +4,7 @@ Email endpoints for email API routes.
 from fastapi import APIRouter, Request, Depends, Query
 
 from app.core.dependencies import get_current_user_dependency
-from app.models import Email, Prediction
+from app.models import Email, Prediction, User, FetchLog, AnalysisLog
 from app.schemas.email import EmailFetchRequest
 from app.services.email_service import EmailService
 from app.services.gmail_service import GmailService
@@ -84,14 +84,19 @@ async def fetch(
     
     try:
         max_results = min(fetch_request.max_results, 500)  # Cap at 500
-        logger.info(f'Email fetch requested [user_id={user_id}] [max_results={max_results}] [request_id={request_id}]')
         
-        emails = GmailService.fetch_emails(user_id, max_results=max_results)
+        user = User.get_by_id(user_id)
+        last_fetch = user.get('last_fetch_at') if user else None
+        logger.info(f'Email fetch requested [user_id={user_id}] [max_results={max_results}] [after={last_fetch}] [request_id={request_id}]')
+        
+        emails = GmailService.fetch_emails(user_id, max_results=max_results, after=last_fetch)
         
         # Store emails in database
         stored_count = 0
+        new_count = 0
         stored_emails = []
         for email_data in emails:
+            existing = EmailService.get_email_by_gmail_id(user_id, email_data['gmail_message_id'])
             email = EmailService.create_email(
                 user_id=user_id,
                 gmail_message_id=email_data['gmail_message_id'],
@@ -103,12 +108,23 @@ async def fetch(
             )
             stored_emails.append(email)
             stored_count += 1
+            if not existing:
+                new_count += 1
         
-        logger.info(f'Email fetch completed: {stored_count} emails stored [user_id={user_id}] [request_id={request_id}]')
+        User.update_last_fetch(user_id)
+        FetchLog.create(
+            user_id=user_id,
+            source='manual',
+            emails_fetched=len(emails),
+            new_emails=new_count
+        )
+        
+        logger.info(f'Email fetch completed: {stored_count} total, {new_count} new [user_id={user_id}] [request_id={request_id}]')
         return success_response(data={
             'count': stored_count,
+            'new_count': new_count,
             'emails': stored_emails
-        }, message=f'Successfully fetched and stored {stored_count} emails')
+        }, message=f'Fetched {stored_count} emails ({new_count} new)')
     except Exception as e:
         logger.error(f'Error fetching emails [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
         return error_response(error=str(e), message='Error fetching emails', status_code=500)
@@ -203,6 +219,108 @@ async def list_emails(
     except Exception as e:
         logger.error(f'Error retrieving email list [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
         return error_response(error=str(e), message='Error retrieving emails', status_code=500)
+
+
+@router.get(
+    "/fetch-status",
+    summary="Get email fetch status",
+    description="Get the current user's last fetch timestamp and total email count.",
+    tags=["Emails"]
+)
+async def fetch_status(
+    request: Request,
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """Return last_fetch_at and email count for the authenticated user."""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    try:
+        user = User.get_by_id(user_id)
+        total_emails = Email.count_by_user_id(user_id)
+        return success_response(data={
+            'last_fetch_at': user.get('last_fetch_at') if user else None,
+            'total_emails': total_emails,
+        })
+    except Exception as e:
+        logger.error(f'Error getting fetch status [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
+        return error_response(error=str(e), message='Error getting fetch status', status_code=500)
+
+
+@router.get(
+    "/fetch-history",
+    summary="Get email fetch history",
+    description="Get a log of all past email fetch events (manual and scheduled) for the authenticated user.",
+    tags=["Emails"]
+)
+async def fetch_history(
+    request: Request,
+    limit: int = Query(20, ge=1, le=100, description="Number of log entries to return"),
+    offset: int = Query(0, ge=0, description="Number of log entries to skip"),
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """Return paginated fetch history for the authenticated user."""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    try:
+        logs = FetchLog.get_by_user_id(user_id, limit=limit, offset=offset)
+        return success_response(data={
+            'logs': logs,
+            'limit': limit,
+            'offset': offset,
+        })
+    except Exception as e:
+        logger.error(f'Error getting fetch history [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
+        return error_response(error=str(e), message='Error getting fetch history', status_code=500)
+
+
+@router.get(
+    "/analysis-status",
+    summary="Get auto-analysis status",
+    description="Get the current user's last analysis timestamp and count of unanalyzed emails.",
+    tags=["Emails"]
+)
+async def analysis_status(
+    request: Request,
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """Return last_analysis_at and unanalyzed email count."""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    try:
+        user = User.get_by_id(user_id)
+        unanalyzed = Email.get_unanalyzed_by_user_id(user_id, limit=1000)
+        total_emails = Email.count_by_user_id(user_id)
+        return success_response(data={
+            'last_analysis_at': user.get('last_analysis_at') if user else None,
+            'unanalyzed_count': len(unanalyzed),
+            'total_emails': total_emails,
+        })
+    except Exception as e:
+        logger.error(f'Error getting analysis status [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
+        return error_response(error=str(e), message='Error getting analysis status', status_code=500)
+
+
+@router.get(
+    "/analysis-history",
+    summary="Get auto-analysis history",
+    description="Get a log of all past auto-analysis events for the authenticated user.",
+    tags=["Emails"]
+)
+async def analysis_history(
+    request: Request,
+    limit: int = Query(20, ge=1, le=100, description="Number of log entries to return"),
+    offset: int = Query(0, ge=0, description="Number of log entries to skip"),
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """Return paginated analysis history for the authenticated user."""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    try:
+        logs = AnalysisLog.get_by_user_id(user_id, limit=limit, offset=offset)
+        return success_response(data={
+            'logs': logs,
+            'limit': limit,
+            'offset': offset,
+        })
+    except Exception as e:
+        logger.error(f'Error getting analysis history [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
+        return error_response(error=str(e), message='Error getting analysis history', status_code=500)
 
 
 @router.get(

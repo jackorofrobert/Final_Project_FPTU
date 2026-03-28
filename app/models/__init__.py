@@ -4,6 +4,8 @@ from app.models.oauth_token import OAuthToken
 from app.models.email import Email
 from app.models.prediction import Prediction
 from app.models.prediction_detail import PredictionFeature, PredictionLink, SuspiciousSegment
+from app.models.fetch_log import FetchLog
+from app.models.analysis_log import AnalysisLog
 
 __all__ = [
     'User', 
@@ -12,5 +14,7 @@ __all__ = [
     'Prediction',
     'PredictionFeature',
     'PredictionLink',
-    'SuspiciousSegment'
+    'SuspiciousSegment',
+    'FetchLog',
+    'AnalysisLog',
 ]

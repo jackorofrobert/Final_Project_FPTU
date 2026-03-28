@@ -4,18 +4,20 @@
 class App {
   constructor() {
     this.currentPage = "home";
-    this.selectedEmails = new Set(); // Track selected email IDs
-    this.emailManagementData = null; // Store email list data
+    this.selectedEmails = new Set();
+    this.emailManagementData = null;
+    this.pollInterval = null;
+    this.lastKnownEmailCount = null;
     this.init();
   }
 
   async init() {
-    // Set up authentication state change listener
     authManager.setOnAuthStateChange((isAuthenticated, user) => {
       this.updateNavigation();
-      // If user was authenticated and now isn't, show notification
-      if (!isAuthenticated && this.currentPage !== "home") {
-        // Don't show error if we're on home page or during initial load
+      if (isAuthenticated) {
+        this.startPolling();
+      } else {
+        this.stopPolling();
         if (this.currentPage && this.currentPage !== "home") {
           this.showError(
             "Your session has expired. Please reconnect your Gmail account to continue.",
@@ -24,21 +26,75 @@ class App {
       }
     });
 
-    // Check authentication status
     await authManager.checkStatus();
-
-    // Handle OAuth callback
     this.handleAuthCallback();
-
-    // Set up routing
     this.setupRouting();
 
-    // Load initial page
     const hash = window.location.hash.substring(1);
     if (hash && hash !== "auth-success" && hash !== "auth-error") {
       this.currentPage = hash;
     }
     this.loadPage(this.currentPage);
+
+    if (authManager.getIsAuthenticated()) {
+      this.startPolling();
+    }
+  }
+
+  startPolling() {
+    if (this.pollInterval) return;
+    this.pollForNewEmails();
+    this.pollInterval = setInterval(() => this.pollForNewEmails(), 30000);
+  }
+
+  stopPolling() {
+    if (this.pollInterval) {
+      clearInterval(this.pollInterval);
+      this.pollInterval = null;
+    }
+  }
+
+  async pollForNewEmails() {
+    try {
+      const response = await api.getFetchStatus();
+      const { total_emails, last_fetch_at } = response.data;
+
+      if (this.lastKnownEmailCount !== null && total_emails > this.lastKnownEmailCount) {
+        const newCount = total_emails - this.lastKnownEmailCount;
+        this.showNewEmailNotification(newCount);
+
+        if (this.currentPage === "emails" || this.currentPage === "manage") {
+          this.loadPage(this.currentPage);
+        }
+      }
+      this.lastKnownEmailCount = total_emails;
+
+      this.updateFetchStatusIndicator(last_fetch_at);
+    } catch (e) {
+      // silently ignore poll errors
+    }
+  }
+
+  showNewEmailNotification(count) {
+    const container = document.getElementById("messages");
+    if (!container) return;
+    const el = document.createElement("div");
+    el.className = "flash flash-info new-email-notification";
+    el.innerHTML = `<strong>${count} new email${count > 1 ? "s" : ""}</strong> fetched from Gmail.
+      <button class="btn btn-sm" style="margin-left:12px" onclick="app.navigate('emails'); this.parentElement.remove();">View</button>`;
+    container.appendChild(el);
+    setTimeout(() => el.remove(), 8000);
+  }
+
+  updateFetchStatusIndicator(lastFetchAt) {
+    const el = document.getElementById("fetch-status-time");
+    if (!el) return;
+    if (lastFetchAt) {
+      const d = new Date(lastFetchAt);
+      el.textContent = `Last sync: ${d.toLocaleTimeString()}`;
+    } else {
+      el.textContent = "Not synced yet";
+    }
   }
 
   handleAuthCallback() {
@@ -103,6 +159,9 @@ class App {
           break;
         case "history":
           await this.renderHistory();
+          break;
+        case "fetch-history":
+          await this.renderFetchHistory();
           break;
         default:
           await this.renderHome();
@@ -320,6 +379,157 @@ class App {
         this.getUserFriendlyErrorMessage(error, "Failed to load history"),
       );
       // If it's an auth error, redirect to home
+      if (error.isAuthError || error.type === "AUTH_ERROR") {
+        this.navigate("home");
+      }
+    }
+  }
+
+  async renderFetchHistory() {
+    if (!authManager.getIsAuthenticated()) {
+      this.showError("Please connect your Gmail account first");
+      this.navigate("home");
+      return;
+    }
+
+    try {
+      const [statusRes, logsRes, analysisStatusRes, analysisLogsRes] =
+        await Promise.all([
+          api.getFetchStatus(),
+          api.getFetchHistory(50, 0),
+          api.getAnalysisStatus(),
+          api.getAnalysisHistory(50, 0),
+        ]);
+
+      const { last_fetch_at, total_emails } = statusRes.data;
+      const logs = logsRes.data.logs || [];
+      const { last_analysis_at, unanalyzed_count } = analysisStatusRes.data;
+      const analysisLogs = analysisLogsRes.data.logs || [];
+
+      const lastSync = last_fetch_at
+        ? new Date(last_fetch_at).toLocaleString()
+        : "Never";
+      const lastAnalysis = last_analysis_at
+        ? new Date(last_analysis_at).toLocaleString()
+        : "Never";
+
+      // Fetch history table
+      let fetchLogsHtml = "";
+      if (logs.length > 0) {
+        fetchLogsHtml = `
+          <table class="fetch-history-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Source</th>
+                <th>Fetched</th>
+                <th>New</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${logs.map((log) => {
+                const time = log.created_at ? new Date(log.created_at).toLocaleString() : "";
+                const sourceBadge = log.source === "scheduler"
+                  ? `<span class="badge badge-info">Auto</span>`
+                  : `<span class="badge badge-secondary">Manual</span>`;
+                const newBadge = log.new_emails > 0
+                  ? `<span class="badge badge-success">${log.new_emails}</span>`
+                  : `<span class="text-muted">0</span>`;
+                return `<tr><td>${time}</td><td>${sourceBadge}</td><td>${log.emails_fetched}</td><td>${newBadge}</td></tr>`;
+              }).join("")}
+            </tbody>
+          </table>`;
+      } else {
+        fetchLogsHtml = '<p class="text-muted">No fetch history yet.</p>';
+      }
+
+      // Analysis history table
+      let analysisLogsHtml = "";
+      if (analysisLogs.length > 0) {
+        analysisLogsHtml = `
+          <table class="fetch-history-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Source</th>
+                <th>Analyzed</th>
+                <th>Skipped</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${analysisLogs.map((log) => {
+                const time = log.created_at ? new Date(log.created_at).toLocaleString() : "";
+                const sourceBadge = log.source === "scheduler"
+                  ? `<span class="badge badge-info">Auto</span>`
+                  : `<span class="badge badge-secondary">Manual</span>`;
+                const analyzedBadge = log.emails_analyzed > 0
+                  ? `<span class="badge badge-success">${log.emails_analyzed}</span>`
+                  : `<span class="text-muted">0</span>`;
+                const skippedBadge = log.emails_skipped > 0
+                  ? `<span class="badge badge-warning">${log.emails_skipped}</span>`
+                  : `<span class="text-muted">0</span>`;
+                return `<tr><td>${time}</td><td>${sourceBadge}</td><td>${analyzedBadge}</td><td>${skippedBadge}</td></tr>`;
+              }).join("")}
+            </tbody>
+          </table>`;
+      } else {
+        analysisLogsHtml = '<p class="text-muted">No analysis history yet.</p>';
+      }
+
+      document.getElementById("app-content").innerHTML = `
+        <div class="fetch-history-page">
+          <div class="fetch-history-header">
+            <h1>Sync & Analysis Log</h1>
+            <div class="header-actions">
+              <button class="btn btn-primary" onclick="app.fetchEmails()">Fetch Now</button>
+            </div>
+          </div>
+
+          <div class="fetch-status-cards">
+            <div class="status-card">
+              <h3>Total Emails</h3>
+              <p class="status-value">${total_emails}</p>
+            </div>
+            <div class="status-card">
+              <h3>Last Fetch</h3>
+              <p class="status-value">${lastSync}</p>
+            </div>
+            <div class="status-card">
+              <h3>Last Analysis</h3>
+              <p class="status-value">${lastAnalysis}</p>
+            </div>
+            <div class="status-card">
+              <h3>Unanalyzed</h3>
+              <p class="status-value ${unanalyzed_count > 0 ? "status-warning" : ""}">${unanalyzed_count}</p>
+            </div>
+            <div class="status-card">
+              <h3>Auto-Fetch</h3>
+              <p class="status-value status-active">Every 5 min</p>
+            </div>
+            <div class="status-card">
+              <h3>Auto-Analysis</h3>
+              <p class="status-value status-active">Every 5 min</p>
+            </div>
+          </div>
+
+          <div class="sync-log-sections">
+            <div class="fetch-history-list">
+              <h2>Fetch History</h2>
+              ${fetchLogsHtml}
+            </div>
+
+            <div class="fetch-history-list">
+              <h2>Analysis History</h2>
+              ${analysisLogsHtml}
+            </div>
+          </div>
+        </div>`;
+
+      this.updateNavigation();
+    } catch (error) {
+      this.showError(
+        this.getUserFriendlyErrorMessage(error, "Failed to load sync log"),
+      );
       if (error.isAuthError || error.type === "AUTH_ERROR") {
         this.navigate("home");
       }
@@ -761,8 +971,21 @@ class App {
     try {
       this.showLoading("Fetching emails...");
       const response = await api.fetchEmails();
-      this.showSuccess(response.message || "Emails fetched successfully");
-      await this.renderEmails();
+      const newCount = response.data?.new_count || 0;
+      const totalCount = response.data?.count || 0;
+      this.showSuccess(
+        newCount > 0
+          ? `Fetched ${totalCount} emails (${newCount} new)`
+          : `Fetched ${totalCount} emails (no new emails)`
+      );
+      if (this.lastKnownEmailCount !== null) {
+        this.lastKnownEmailCount += newCount;
+      }
+      if (this.currentPage === "fetch-history") {
+        await this.renderFetchHistory();
+      } else {
+        await this.renderEmails();
+      }
     } catch (error) {
       this.showError(
         this.getUserFriendlyErrorMessage(error, "Failed to fetch emails"),
@@ -1153,10 +1376,12 @@ class App {
                 ${isAuth ? `<a href="#" data-page="emails">Emails</a>` : ""}
                 ${isAuth ? `<a href="#" data-page="manage">Manage</a>` : ""}
                 ${isAuth ? `<a href="#" data-page="history">History</a>` : ""}
+                ${isAuth ? `<a href="#" data-page="fetch-history">Sync Log</a>` : ""}
                 <a href="#" data-page="analyze">Analyze</a>
                 ${
                   isAuth
-                    ? `<button class="btn btn-sm" onclick="app.disconnectGmail()">Disconnect</button>
+                    ? `<span id="fetch-status-time" class="fetch-status-indicator"></span>
+                       <button class="btn btn-sm" onclick="app.disconnectGmail()">Disconnect</button>
                        <span class="user-email">${user.email}</span>`
                     : `<button class="btn btn-sm" onclick="app.connectGmail()">Connect Gmail</button>`
                 }

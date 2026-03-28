@@ -188,6 +188,23 @@ class ApiClient {
     return results;
   }
 
+  // Fetch status & history
+  async getFetchStatus() {
+    return this.get("/emails/fetch-status");
+  }
+
+  async getFetchHistory(limit = 20, offset = 0) {
+    return this.get(`/emails/fetch-history?limit=${limit}&offset=${offset}`);
+  }
+
+  async getAnalysisStatus() {
+    return this.get("/emails/analysis-status");
+  }
+
+  async getAnalysisHistory(limit = 20, offset = 0) {
+    return this.get(`/emails/analysis-history?limit=${limit}&offset=${offset}`);
+  }
+
   // History endpoints
   async getPredictionHistory(limit = 100, offset = 0) {
     return this.get(`/history/predictions?limit=${limit}&offset=${offset}`);

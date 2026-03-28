@@ -57,3 +57,35 @@ class User:
         if not user:
             user = User.create(email)
         return user
+    
+    @staticmethod
+    def update_last_fetch(user_id: int):
+        """Update last email fetch timestamp."""
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'UPDATE users SET last_fetch_at = ? WHERE id = ?',
+                (datetime.now().isoformat(), user_id)
+            )
+    
+    @staticmethod
+    def update_last_analysis(user_id: int):
+        """Update last auto-analysis timestamp."""
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                'UPDATE users SET last_analysis_at = ? WHERE id = ?',
+                (datetime.now().isoformat(), user_id)
+            )
+
+    @staticmethod
+    def get_all_with_tokens() -> list[dict]:
+        """Get all users who have valid OAuth tokens (for scheduled fetching)."""
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT u.* FROM users u
+                INNER JOIN oauth_tokens ot ON u.id = ot.user_id
+                WHERE ot.refresh_token IS NOT NULL AND ot.refresh_token != ''
+            ''')
+            return [dict(row) for row in cursor.fetchall()]

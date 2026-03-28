@@ -62,9 +62,21 @@ def init_db():
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     email TEXT UNIQUE NOT NULL,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_login TIMESTAMP
+                    last_login TIMESTAMP,
+                    last_fetch_at TIMESTAMP,
+                    last_analysis_at TIMESTAMP
                 )
             ''')
+            
+            # Migration: add new columns if missing (existing DBs)
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [col[1] for col in cursor.fetchall()]
+            if 'last_fetch_at' not in columns:
+                logger.info('Migrating users table: adding last_fetch_at column')
+                cursor.execute('ALTER TABLE users ADD COLUMN last_fetch_at TIMESTAMP')
+            if 'last_analysis_at' not in columns:
+                logger.info('Migrating users table: adding last_analysis_at column')
+                cursor.execute('ALTER TABLE users ADD COLUMN last_analysis_at TIMESTAMP')
             
             # Create oauth_tokens table
             logger.debug('Creating oauth_tokens table')
@@ -164,6 +176,34 @@ def init_db():
                 )
             ''')
             
+            # Create fetch_logs table (tracks each email fetch event)
+            logger.debug('Creating fetch_logs table')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS fetch_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    emails_fetched INTEGER NOT NULL DEFAULT 0,
+                    new_emails INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            ''')
+            
+            # Create analysis_logs table (tracks each auto-analysis event)
+            logger.debug('Creating analysis_logs table')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS analysis_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'manual',
+                    emails_analyzed INTEGER NOT NULL DEFAULT 0,
+                    emails_skipped INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            ''')
+            
             # Create indexes for better performance
             logger.debug('Creating database indexes')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_emails_user_id ON emails(user_id)')
@@ -173,6 +213,8 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_prediction_features_prediction_id ON prediction_features(prediction_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_prediction_links_prediction_id ON prediction_links(prediction_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_suspicious_segments_prediction_id ON suspicious_segments(prediction_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_fetch_logs_user_id ON fetch_logs(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_analysis_logs_user_id ON analysis_logs(user_id)')
             
         logger.info(f'Database initialization completed [db_path={db_path}]')
     except Exception as e:
