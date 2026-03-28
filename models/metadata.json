@@ -1,6 +1,6 @@
 {
-  "num_datasets": 1,
-  "num_samples": 212085,
+  "num_datasets": 2,
+  "num_samples": 410674,
   "feature_cols": [
     "text",
     "has_attachment",
@@ -11,9 +11,12 @@
     "sender_domain"
   ],
   "optimal_threshold": 0.6,
-  "optimal_f1_score": 0.9607,
+  "optimal_f1_score": 0.9577,
   "label_distribution": {
-    "0": 113096,
-    "1": 98989
-  }
+    "0.0": 212284,
+    "1.0": 198390
+  },
+  "n_phishing": 198390,
+  "n_legit": 212284,
+  "scale_pos_weight": 1.07
 }

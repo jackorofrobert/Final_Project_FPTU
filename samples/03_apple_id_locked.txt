@@ -1,0 +1,24 @@
+Subject: Your Apple ID has been locked for security reasons
+
+---
+
+Dear Apple Customer,
+
+We detected unauthorized sign-in attempts to your Apple ID from an unknown device in Russia. Your Apple ID has been temporarily locked for your protection.
+
+To unlock your account and secure it, please verify your identity by clicking the button below:
+
+[Verify Your Apple ID Now]
+http://apple-id-verify-secure.com/unlock?token=ax7291bz
+
+If you do not verify within 48 hours, your Apple ID will be permanently disabled and you will lose access to all your purchases, iCloud data, photos, and documents.
+
+Device Details:
+- Location: Moscow, Russia
+- IP Address: 185.220.101.34
+- Browser: Chrome on Windows
+
+If this was you, you can safely ignore this email. Otherwise, secure your account immediately!
+
+Apple Support
+Apple Inc. | One Apple Park Way, Cupertino, CA 95014

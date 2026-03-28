@@ -14,7 +14,7 @@ from app.utils.logger import get_logger
 # Add src directory to path to import existing ML code
 sys.path.insert(0, str(Path(__file__).parent.parent.parent / 'src'))
 
-from src.text_cleaning import normalize_text, count_urls, detect_urgent_keywords, extract_sender_domain, exclamation_count as count_exclamation, length_chars
+from src.text_cleaning import normalize_text, count_urls, detect_urgent_keywords, extract_sender_domain, exclamation_count as count_exclamation, length_chars, extract_link_domains
 from src.features import prepare_features, calculate_ensemble_score
 from src.config import SUSPICIOUS_MARGIN
 from src.predict import analyze_suspicious_segments
@@ -125,13 +125,20 @@ class PredictionService:
             # Predict using pipeline
             proba = float(cls._model.predict_proba(X)[:, 1][0])
             
+            # Extract URLs for detailed link risk analysis (matching CLI behavior)
+            import re as _re
+            urls = _re.findall(r'(https?://\S+|www\.\S+)', raw_text, _re.IGNORECASE)
+            link_domains = extract_link_domains(raw_text)
+            
             # Calculate ensemble score (returns detailed dict)
             ensemble_result = calculate_ensemble_score(
                 model_proba=proba,
                 urgent_keywords=urgent_keywords,
                 links_count=links_count,
                 sender_domain=sender_domain,
-                has_attachment=has_attachment
+                has_attachment=has_attachment,
+                link_domains=link_domains,
+                urls=urls
             )
             
             ensemble_score = ensemble_result['ensemble_score']

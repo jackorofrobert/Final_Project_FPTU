@@ -1,0 +1,26 @@
+Subject: Critical Security Alert - Someone has your password!
+
+---
+
+Google Security Alert
+
+Someone just used your password to try to sign in to your Google Account.
+
+Details:
+- user@gmail.com
+- Date: March 19, 2025 at 10:10 PM UTC
+- Device: Windows PC
+- Location: Beijing, China
+- IP: 103.224.182.251
+
+Google blocked the sign-in attempt. You should change your password immediately.
+
+CHANGE PASSWORD NOW:
+http://google-security-alert-verify.com/password/change
+
+If this was you, you can ignore this alert. If this wasn't you, your account may be compromised. Act now to secure your account!!!
+
+- Google Accounts Team
+
+You received this email to let you know about important changes to your Google Account and services.
+© 2025 Google LLC, 1600 Amphitheatre Parkway, Mountain View, CA 94043, USA

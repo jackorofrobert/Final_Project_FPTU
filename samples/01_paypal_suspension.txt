@@ -1,0 +1,29 @@
+Subject: Your PayPal Account Has Been Limited - Immediate Action Required!
+
+---
+
+Dear Valued PayPal Customer,
+
+We have noticed unusual activity on your PayPal account. For your protection, we have temporarily limited your account access until you verify your identity.
+
+If you do not verify your account within 24 hours, your account will be permanently suspended and all funds will be frozen.
+
+Please click the link below to verify your identity and restore full access to your account:
+
+http://paypal-secure-login.com/verify/account?id=8827361
+
+You will need to provide the following information:
+- Full name
+- Credit card number
+- Social Security Number
+- Date of birth
+- Account password
+
+We apologize for any inconvenience. This is a mandatory security update to protect your financial information.
+
+Thank you for being a valued PayPal member.
+
+Sincerely,
+PayPal Security Team
+PayPal, Inc.
+© 2025 PayPal. All rights reserved.
