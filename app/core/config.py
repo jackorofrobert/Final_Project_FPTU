@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     
     # ML Model settings
     MODEL_PATH: str = str(Path(__file__).parent.parent.parent / 'models' / 'model.joblib')
+
+    # VirusTotal settings
+    VIRUSTOTAL_API_KEY: str = ''
+    VIRUSTOTAL_DAILY_LIMIT: int = 200
     
     # Session settings
     SESSION_COOKIE_SECURE: bool = False

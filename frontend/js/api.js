@@ -205,6 +205,22 @@ class ApiClient {
     return this.get(`/emails/analysis-history?limit=${limit}&offset=${offset}`);
   }
 
+  async getVTStatus() {
+    return this.get("/emails/vt-status");
+  }
+
+  async runVTScanNow() {
+    return this.post("/emails/vt-scan-now", {});
+  }
+
+  async getVTHistory(limit = 20, offset = 0) {
+    return this.get(`/emails/vt-history?limit=${limit}&offset=${offset}`);
+  }
+
+  async getVTResults(limit = 100, offset = 0) {
+    return this.get(`/emails/vt-results?limit=${limit}&offset=${offset}`);
+  }
+
   // History endpoints
   async getPredictionHistory(limit = 100, offset = 0) {
     return this.get(`/history/predictions?limit=${limit}&offset=${offset}`);

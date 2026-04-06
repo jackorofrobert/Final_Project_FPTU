@@ -4,10 +4,11 @@ Email endpoints for email API routes.
 from fastapi import APIRouter, Request, Depends, Query
 
 from app.core.dependencies import get_current_user_dependency
-from app.models import Email, Prediction, User, FetchLog, AnalysisLog
+from app.models import Email, Prediction, User, FetchLog, AnalysisLog, VTLinkCheck, VTScanLog
 from app.schemas.email import EmailFetchRequest
 from app.services.email_service import EmailService
 from app.services.gmail_service import GmailService
+from app.services.virustotal_service import VirusTotalService
 from app.utils.api_response import success_response, error_response, unauthorized_response, not_found_response
 from app.utils.logger import get_logger
 
@@ -321,6 +322,98 @@ async def analysis_history(
     except Exception as e:
         logger.error(f'Error getting analysis history [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
         return error_response(error=str(e), message='Error getting analysis history', status_code=500)
+
+
+@router.get(
+    "/vt-status",
+    summary="Get VirusTotal quota status",
+    description="Get current VirusTotal daily usage and remaining requests.",
+    tags=["Emails"]
+)
+async def vt_status(
+    request: Request,
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """Return VirusTotal quota usage for today."""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    try:
+        usage = VirusTotalService.get_daily_usage()
+        return success_response(data=usage)
+    except Exception as e:
+        logger.error(f'Error getting VT status [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
+        return error_response(error=str(e), message='Error getting VirusTotal status', status_code=500)
+
+
+@router.post(
+    "/vt-scan-now",
+    summary="Run VirusTotal scan now",
+    description="Manually trigger VirusTotal scan immediately (does not wait for scheduler).",
+    tags=["Emails"]
+)
+async def vt_scan_now(
+    request: Request,
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """Trigger manual VirusTotal scan for current user."""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    try:
+        result = VirusTotalService.scan_user_email_links(user_id=user_id)
+        VTScanLog.create(
+            user_id=user_id,
+            source='manual',
+            checked=result['checked'],
+            skipped=result['skipped'],
+            errors=result['errors'],
+            quota_remaining=result['quota_remaining'],
+        )
+        return success_response(data=result, message='VirusTotal scan completed')
+    except Exception as e:
+        logger.error(f'Error running VT scan now [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
+        return error_response(error=str(e), message='Error running VirusTotal scan', status_code=500)
+
+
+@router.get(
+    "/vt-history",
+    summary="Get VirusTotal scan history",
+    description="Get history of scheduler/manual VirusTotal scan runs.",
+    tags=["Emails"]
+)
+async def vt_history(
+    request: Request,
+    limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """Return VT scan run logs for current user."""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    try:
+        logs = VTScanLog.get_by_user_id(user_id=user_id, limit=limit, offset=offset)
+        return success_response(data={'logs': logs, 'limit': limit, 'offset': offset})
+    except Exception as e:
+        logger.error(f'Error getting VT history [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
+        return error_response(error=str(e), message='Error getting VirusTotal history', status_code=500)
+
+
+@router.get(
+    "/vt-results",
+    summary="Get VirusTotal link results",
+    description="Get stored VirusTotal results for checked links.",
+    tags=["Emails"]
+)
+async def vt_results(
+    request: Request,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """Return stored VT link check results for current user."""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    try:
+        results = VTLinkCheck.get_by_user_id(user_id=user_id, limit=limit, offset=offset)
+        return success_response(data={'results': results, 'limit': limit, 'offset': offset})
+    except Exception as e:
+        logger.error(f'Error getting VT results [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
+        return error_response(error=str(e), message='Error getting VirusTotal results', status_code=500)
 
 
 @router.get(

@@ -1,16 +1,18 @@
 """
-Background scheduler for periodic email fetching and auto-analysis.
+Background scheduler for periodic email fetching, auto-analysis, and VT checks.
 
 Uses APScheduler to:
 - Poll Gmail every 5 minutes for each authenticated user (incremental fetch).
 - Auto-analyze unanalyzed emails every 5 minutes (runs after fetch).
+- Check email links via VirusTotal with daily quota protection.
 """
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.interval import IntervalTrigger
 
-from app.models import User, Email, FetchLog, AnalysisLog
+from app.models import User, Email, FetchLog, AnalysisLog, VTScanLog
 from app.services.gmail_service import GmailService
 from app.services.email_service import EmailService
+from app.services.virustotal_service import VirusTotalService
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -19,6 +21,7 @@ FETCH_INTERVAL_MINUTES = 5
 ANALYSIS_INTERVAL_MINUTES = 5
 MAX_RESULTS_PER_FETCH = 50
 MAX_ANALYSIS_PER_RUN = 20
+VT_CHECK_INTERVAL_MINUTES = 5
 
 scheduler = AsyncIOScheduler()
 
@@ -161,11 +164,56 @@ def start_scheduler():
         name=f'Auto-analyze emails every {ANALYSIS_INTERVAL_MINUTES} minutes',
         replace_existing=True,
     )
+    scheduler.add_job(
+        scan_links_with_virustotal_for_all_users,
+        trigger=IntervalTrigger(minutes=VT_CHECK_INTERVAL_MINUTES),
+        id='periodic_vt_link_scan',
+        name=f'Check links with VirusTotal every {VT_CHECK_INTERVAL_MINUTES} minutes',
+        replace_existing=True,
+    )
     scheduler.start()
     logger.info(
         f'Scheduler started — fetch every {FETCH_INTERVAL_MINUTES}min, '
-        f'analysis every {ANALYSIS_INTERVAL_MINUTES}min'
+        f'analysis every {ANALYSIS_INTERVAL_MINUTES}min, '
+        f'VT check every {VT_CHECK_INTERVAL_MINUTES}min'
     )
+
+
+def scan_links_with_virustotal_for_all_users():
+    """Check email links against VirusTotal, with daily quota."""
+    logger.info('Scheduler: starting VirusTotal link scan for all users')
+    try:
+        users = User.get_all_with_tokens()
+    except Exception as e:
+        logger.error(f'Scheduler: failed to query users for VT scan: {e}', exc_info=True)
+        return
+
+    if not users:
+        logger.info('Scheduler: no users with valid tokens, skipping VT scan')
+        return
+
+    for user in users:
+        user_id = user['id']
+        try:
+            result = VirusTotalService.scan_user_email_links(user_id=user_id)
+            VTScanLog.create(
+                user_id=user_id,
+                source='scheduler',
+                checked=result['checked'],
+                skipped=result['skipped'],
+                errors=result['errors'],
+                quota_remaining=result['quota_remaining'],
+            )
+            logger.info(
+                f'Scheduler: VT scan done [user_id={user_id}] '
+                f'checked={result["checked"]} skipped={result["skipped"]} '
+                f'errors={result["errors"]} quota_remaining={result["quota_remaining"]}'
+            )
+        except Exception as e:
+            logger.error(
+                f'Scheduler: error during VT scan [user_id={user_id}]: {e}',
+                exc_info=True,
+            )
 
 
 def stop_scheduler():

@@ -203,6 +203,60 @@ def init_db():
                     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
                 )
             ''')
+
+            # Create vt_link_checks table (tracks VirusTotal checks per email-link)
+            logger.debug('Creating vt_link_checks table')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS vt_link_checks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    email_id INTEGER NOT NULL,
+                    url TEXT NOT NULL,
+                    url_hash TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    malicious INTEGER DEFAULT 0,
+                    suspicious INTEGER DEFAULT 0,
+                    harmless INTEGER DEFAULT 0,
+                    undetected INTEGER DEFAULT 0,
+                    last_checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (email_id) REFERENCES emails(id) ON DELETE CASCADE,
+                    UNIQUE(email_id, url_hash)
+                )
+            ''')
+
+            # Create vt_daily_usage table (global daily API quota tracking)
+            logger.debug('Creating vt_daily_usage table')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS vt_daily_usage (
+                    usage_date TEXT PRIMARY KEY,
+                    request_count INTEGER NOT NULL DEFAULT 0,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+
+            # Create vt_scan_logs table (tracks scheduler runs)
+            logger.debug('Creating vt_scan_logs table')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS vt_scan_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    source TEXT NOT NULL DEFAULT 'scheduler',
+                    checked INTEGER NOT NULL DEFAULT 0,
+                    skipped INTEGER NOT NULL DEFAULT 0,
+                    errors INTEGER NOT NULL DEFAULT 0,
+                    quota_remaining INTEGER NOT NULL DEFAULT 0,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+                )
+            ''')
+            cursor.execute("PRAGMA table_info(vt_scan_logs)")
+            vt_log_columns = [col[1] for col in cursor.fetchall()]
+            if 'source' not in vt_log_columns:
+                logger.info('Migrating vt_scan_logs table: adding source column')
+                cursor.execute("ALTER TABLE vt_scan_logs ADD COLUMN source TEXT NOT NULL DEFAULT 'scheduler'")
             
             # Create indexes for better performance
             logger.debug('Creating database indexes')
@@ -215,6 +269,10 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_suspicious_segments_prediction_id ON suspicious_segments(prediction_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_fetch_logs_user_id ON fetch_logs(user_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_analysis_logs_user_id ON analysis_logs(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_vt_link_checks_user_id ON vt_link_checks(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_vt_link_checks_email_id ON vt_link_checks(email_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_vt_link_checks_url_hash ON vt_link_checks(url_hash)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_vt_scan_logs_user_id ON vt_scan_logs(user_id)')
             
         logger.info(f'Database initialization completed [db_path={db_path}]')
     except Exception as e:

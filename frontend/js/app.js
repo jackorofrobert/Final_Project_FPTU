@@ -393,18 +393,24 @@ class App {
     }
 
     try {
-      const [statusRes, logsRes, analysisStatusRes, analysisLogsRes] =
+      const [statusRes, logsRes, analysisStatusRes, analysisLogsRes, vtStatusRes, vtLogsRes, vtResultsRes] =
         await Promise.all([
           api.getFetchStatus(),
           api.getFetchHistory(50, 0),
           api.getAnalysisStatus(),
           api.getAnalysisHistory(50, 0),
+          api.getVTStatus(),
+          api.getVTHistory(50, 0),
+          api.getVTResults(100, 0),
         ]);
 
       const { last_fetch_at, total_emails } = statusRes.data;
       const logs = logsRes.data.logs || [];
       const { last_analysis_at, unanalyzed_count } = analysisStatusRes.data;
       const analysisLogs = analysisLogsRes.data.logs || [];
+      const vtUsage = vtStatusRes.data;
+      const vtLogs = vtLogsRes.data.logs || [];
+      const vtResults = vtResultsRes.data.results || [];
 
       const lastSync = last_fetch_at
         ? new Date(last_fetch_at).toLocaleString()
@@ -476,12 +482,74 @@ class App {
         analysisLogsHtml = '<p class="text-muted">No analysis history yet.</p>';
       }
 
+      let vtLogsHtml = "";
+      if (vtLogs.length > 0) {
+        vtLogsHtml = `
+          <table class="fetch-history-table">
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Source</th>
+                <th>Checked</th>
+                <th>Skipped</th>
+                <th>Errors</th>
+                <th>Quota Left</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${vtLogs.map((log) => `
+                <tr>
+                  <td>${log.created_at ? new Date(log.created_at).toLocaleString() : ""}</td>
+                  <td><span class="badge ${log.source === "manual" ? "badge-secondary" : "badge-info"}">${log.source}</span></td>
+                  <td>${log.checked}</td>
+                  <td>${log.skipped}</td>
+                  <td>${log.errors}</td>
+                  <td>${log.quota_remaining}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>`;
+      } else {
+        vtLogsHtml = '<p class="text-muted">No VirusTotal scan history yet.</p>';
+      }
+
+      let vtResultsHtml = "";
+      if (vtResults.length > 0) {
+        vtResultsHtml = `
+          <table class="fetch-history-table">
+            <thead>
+              <tr>
+                <th>Checked At</th>
+                <th>URL</th>
+                <th>Status</th>
+                <th>Malicious</th>
+                <th>Suspicious</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${vtResults.slice(0, 30).map((r) => `
+                <tr>
+                  <td>${r.last_checked_at ? new Date(r.last_checked_at).toLocaleString() : ""}</td>
+                  <td style="max-width:420px; word-break:break-all;">${this.escapeHtml(r.url || "")}</td>
+                  <td><span class="badge ${r.status === "success" ? "badge-success" : "badge-danger"}">${r.status}</span></td>
+                  <td>${r.malicious ?? 0}</td>
+                  <td>${r.suspicious ?? 0}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+          <p class="text-muted" style="margin-top:8px;">Showing latest 30 results</p>`;
+      } else {
+        vtResultsHtml = '<p class="text-muted">No VirusTotal link result yet.</p>';
+      }
+
       document.getElementById("app-content").innerHTML = `
         <div class="fetch-history-page">
           <div class="fetch-history-header">
             <h1>Sync & Analysis Log</h1>
             <div class="header-actions">
               <button class="btn btn-primary" onclick="app.fetchEmails()">Fetch Now</button>
+              <button class="btn btn-secondary" onclick="app.runVTScanNow()">Run VT Scan Now</button>
             </div>
           </div>
 
@@ -510,6 +578,14 @@ class App {
               <h3>Auto-Analysis</h3>
               <p class="status-value status-active">Every 5 min</p>
             </div>
+            <div class="status-card">
+              <h3>VT Used Today</h3>
+              <p class="status-value">${vtUsage.used}/${vtUsage.limit}</p>
+            </div>
+            <div class="status-card">
+              <h3>VT Remaining</h3>
+              <p class="status-value ${vtUsage.remaining < 20 ? "status-warning" : "status-active"}">${vtUsage.remaining}</p>
+            </div>
           </div>
 
           <div class="sync-log-sections">
@@ -522,6 +598,14 @@ class App {
               <h2>Analysis History</h2>
               ${analysisLogsHtml}
             </div>
+            <div class="fetch-history-list">
+              <h2>VirusTotal Scan History</h2>
+              ${vtLogsHtml}
+            </div>
+            <div class="fetch-history-list">
+              <h2>VirusTotal Link Results</h2>
+              ${vtResultsHtml}
+            </div>
           </div>
         </div>`;
 
@@ -533,6 +617,26 @@ class App {
       if (error.isAuthError || error.type === "AUTH_ERROR") {
         this.navigate("home");
       }
+    }
+  }
+
+  async runVTScanNow() {
+    try {
+      this.showLoading("Running VirusTotal scan...");
+      const response = await api.runVTScanNow();
+      const d = response.data || {};
+      this.showSuccess(
+        `VT scan done: checked ${d.checked || 0}, skipped ${d.skipped || 0}, errors ${d.errors || 0}, remaining ${d.quota_remaining || 0}`
+      );
+      if (this.currentPage === "fetch-history") {
+        await this.renderFetchHistory();
+      }
+    } catch (error) {
+      this.showError(
+        this.getUserFriendlyErrorMessage(error, "Failed to run VirusTotal scan"),
+      );
+    } finally {
+      this.hideLoading();
     }
   }
 
