@@ -417,6 +417,35 @@ async def vt_results(
 
 
 @router.get(
+    "/{email_id}/vt-results",
+    summary="Get VirusTotal results for an email",
+    description="Get stored VirusTotal link results for a specific email.",
+    tags=["Emails"]
+)
+async def vt_results_by_email(
+    request: Request,
+    email_id: int,
+    limit: int = Query(100, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """Return VirusTotal link check results for one email, with ownership check."""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    try:
+        email = Email.get_by_id(email_id)
+        if not email or email['user_id'] != user_id:
+            return unauthorized_response('Access denied')
+        results = VTLinkCheck.get_by_email_id(email_id=email_id, limit=limit, offset=offset)
+        return success_response(data={'results': results, 'limit': limit, 'offset': offset})
+    except Exception as e:
+        logger.error(
+            f'Error getting VT results by email [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}',
+            exc_info=True
+        )
+        return error_response(error=str(e), message='Error getting VirusTotal results for email', status_code=500)
+
+
+@router.get(
     "/{email_id}",
     summary="Get email details",
     description="Retrieve detailed information about a specific email, including its content and latest prediction result. Requires authentication and ownership of the email.",

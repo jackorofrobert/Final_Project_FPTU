@@ -77,6 +77,22 @@ class VTLinkCheck:
             )
             return [dict(row) for row in cursor.fetchall()]
 
+    @staticmethod
+    def get_by_email_id(email_id: int, limit: int = 100, offset: int = 0) -> list[dict]:
+        """Get VirusTotal link results for one email."""
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                '''SELECT id, user_id, email_id, url, status, malicious, suspicious, harmless, undetected,
+                          last_checked_at, error_message, created_at
+                   FROM vt_link_checks
+                   WHERE email_id = ?
+                   ORDER BY last_checked_at DESC
+                   LIMIT ? OFFSET ?''',
+                (email_id, limit, offset),
+            )
+            return [dict(row) for row in cursor.fetchall()]
+
 
 class VTDailyUsage:
     """Model for vt_daily_usage table."""
