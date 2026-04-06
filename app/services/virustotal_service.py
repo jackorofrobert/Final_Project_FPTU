@@ -166,3 +166,67 @@ class VirusTotalService:
             'errors': errors,
             'quota_remaining': remaining,
         }
+
+    @staticmethod
+    def scan_single_email_links(user_id: int, email_id: int) -> dict:
+        """Scan unchecked links for one specific email, respecting daily quota."""
+        usage = VirusTotalService.get_daily_usage()
+        remaining = usage['remaining']
+        if remaining <= 0:
+            return {'checked': 0, 'skipped': 0, 'errors': 0, 'quota_remaining': 0}
+
+        email = Email.get_by_id(email_id)
+        if not email or email.get('user_id') != user_id:
+            raise ValueError('Email not found or access denied')
+
+        checked = 0
+        skipped = 0
+        errors = 0
+
+        body = email.get('body') or ''
+        urls = VirusTotalService._extract_urls(body)
+        for url in urls:
+            if remaining <= 0:
+                break
+            url_hash = VirusTotalService._url_hash(url)
+
+            if VTLinkCheck.exists(email_id, url_hash):
+                skipped += 1
+                continue
+
+            try:
+                stats = VirusTotalService._check_single_url(url)
+                VTLinkCheck.create(
+                    user_id=user_id,
+                    email_id=email_id,
+                    url=url,
+                    url_hash=url_hash,
+                    status='success',
+                    malicious=stats['malicious'],
+                    suspicious=stats['suspicious'],
+                    harmless=stats['harmless'],
+                    undetected=stats['undetected'],
+                )
+                checked += 1
+                VTDailyUsage.increment(VirusTotalService._today_key(), 1)
+                remaining -= 1
+            except Exception as exc:
+                errors += 1
+                VTLinkCheck.create(
+                    user_id=user_id,
+                    email_id=email_id,
+                    url=url,
+                    url_hash=url_hash,
+                    status='error',
+                    error_message=str(exc),
+                )
+                logger.warning(
+                    f'VirusTotal single-email check failed [user_id={user_id}] [email_id={email_id}] [url={url}]: {exc}'
+                )
+
+        return {
+            'checked': checked,
+            'skipped': skipped,
+            'errors': errors,
+            'quota_remaining': remaining,
+        }

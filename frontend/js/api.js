@@ -163,6 +163,10 @@ class ApiClient {
     return this.get(`/emails/${emailId}/vt-results?limit=${limit}&offset=${offset}`);
   }
 
+  async runVTScanNowForEmail(emailId) {
+    return this.post(`/emails/${emailId}/vt-scan-now`, {});
+  }
+
   // Prediction endpoints
   async analyzeEmail(emailText) {
     return this.post("/predictions/analyze", { email_text: emailText });

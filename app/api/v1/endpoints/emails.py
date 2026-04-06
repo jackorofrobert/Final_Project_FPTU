@@ -445,6 +445,41 @@ async def vt_results_by_email(
         return error_response(error=str(e), message='Error getting VirusTotal results for email', status_code=500)
 
 
+@router.post(
+    "/{email_id}/vt-scan-now",
+    summary="Run VirusTotal scan now for one email",
+    description="Manually trigger VirusTotal scan immediately for a specific email.",
+    tags=["Emails"]
+)
+async def vt_scan_now_by_email(
+    request: Request,
+    email_id: int,
+    user_id: int = Depends(get_current_user_dependency)
+):
+    """Trigger manual VT scan for one email."""
+    request_id = getattr(request.state, 'request_id', 'unknown')
+    try:
+        email = Email.get_by_id(email_id)
+        if not email or email['user_id'] != user_id:
+            return unauthorized_response('Access denied')
+        result = VirusTotalService.scan_single_email_links(user_id=user_id, email_id=email_id)
+        VTScanLog.create(
+            user_id=user_id,
+            source='manual',
+            checked=result['checked'],
+            skipped=result['skipped'],
+            errors=result['errors'],
+            quota_remaining=result['quota_remaining'],
+        )
+        return success_response(data=result, message='VirusTotal scan completed for this email')
+    except Exception as e:
+        logger.error(
+            f'Error running VT scan now by email [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}',
+            exc_info=True
+        )
+        return error_response(error=str(e), message='Error running VirusTotal scan for email', status_code=500)
+
+
 @router.get(
     "/{email_id}",
     summary="Get email details",

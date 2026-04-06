@@ -1449,7 +1449,8 @@ class App {
           vtSectionHtml = `
             <div class="links-analysis">
               <h4>🛡️ VirusTotal Link Check</h4>
-              <p class="text-muted">No VirusTotal result for this email yet. Run "VT Scan Now" in Sync Log.</p>
+              <p class="text-muted">No VirusTotal result for this email yet.</p>
+              <button class="btn btn-sm btn-primary" onclick="app.runVTScanNowForEmail(${email.id})">Run VT Scan For This Email</button>
             </div>
           `;
         }
@@ -1470,6 +1471,9 @@ class App {
           <div class="email-prediction">
             ${predictionHtml}
             ${vtSectionHtml}
+            <div style="margin-top: 10px;">
+              <button class="btn btn-sm btn-secondary" onclick="app.runVTScanNowForEmail(${email.id})">Refresh VT For This Email</button>
+            </div>
           </div>
           <div class="email-body">
             <h3>Email Content</h3>
@@ -1505,6 +1509,24 @@ class App {
     } catch (error) {
       this.showError(
         this.getUserFriendlyErrorMessage(error, "Failed to analyze email"),
+      );
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  async runVTScanNowForEmail(emailId) {
+    try {
+      this.showLoading("Running VirusTotal scan for this email...");
+      const response = await api.runVTScanNowForEmail(emailId);
+      const d = response.data || {};
+      this.showSuccess(
+        `VT email scan: checked ${d.checked || 0}, skipped ${d.skipped || 0}, errors ${d.errors || 0}, remaining ${d.quota_remaining || 0}`
+      );
+      await this.viewEmail(emailId);
+    } catch (error) {
+      this.showError(
+        this.getUserFriendlyErrorMessage(error, "Failed to run VT scan for this email"),
       );
     } finally {
       this.hideLoading();
