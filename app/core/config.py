@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     # VirusTotal settings
     VIRUSTOTAL_API_KEY: str = ''
     VIRUSTOTAL_DAILY_LIMIT: int = 200
+
+    # Google AI Studio (Gemini) — translation
+    GOOGLE_AI_API_KEY: str = ''
+    GOOGLE_AI_API_KEYS: str = ''
+    GEMINI_TRANSLATION_MODEL: str = 'gemini-3-flash-preview'
+    TRANSLATION_CHUNK_MAX_CHARS: int = 4000
+    TRANSLATION_MAX_INPUT_CHARS: int = 120_000
+    TRANSLATION_CHUNK_DELAY_SECONDS: float = 0.25
     
     # Session settings
     SESSION_COOKIE_SECURE: bool = False

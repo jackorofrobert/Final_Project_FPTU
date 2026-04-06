@@ -303,8 +303,19 @@ class App {
                         <label for="email_text">Email Content:</label>
                         <textarea id="email_text" name="email_text" rows="15" class="form-control" required></textarea>
                     </div>
-                    <button type="submit" class="btn btn-primary">Analyze</button>
+                    <div class="form-actions-row">
+                      <button type="submit" class="btn btn-primary">Analyze</button>
+                      <button type="button" class="btn btn-secondary" onclick="app.translateAnalyzeTextToEnglish()">Translate to English (AI)</button>
+                      <span id="analyze-translate-status" class="text-muted email-translate-status"></span>
+                    </div>
                 </form>
+            </div>
+            <div id="analyze-translation-panel" class="email-translation-panel" style="display:none;margin-top:1rem;">
+              <h4>English translation</h4>
+              <p class="text-muted" id="analyze-translation-meta"></p>
+              <div class="email-content email-translation-content">
+                <pre id="analyze-translation-text"></pre>
+              </div>
             </div>
             <div id="analysis-result"></div>
         `;
@@ -1477,6 +1488,19 @@ class App {
           </div>
           <div class="email-body">
             <h3>Email Content</h3>
+            <div class="email-translation-toolbar">
+              <button type="button" class="btn btn-sm btn-secondary" onclick="app.translateEmailBodyToEnglish(${email.id})">
+                Translate to English (AI)
+              </button>
+              <span id="email-translate-status" class="text-muted email-translate-status"></span>
+            </div>
+            <div id="email-translation-panel" class="email-translation-panel" style="display:none;">
+              <h4>English translation</h4>
+              <p class="text-muted email-translation-meta" id="email-translation-meta"></p>
+              <div class="email-content email-translation-content">
+                <pre id="email-translation-text"></pre>
+              </div>
+            </div>
             <div class="email-content">
               <pre>${email.body || ""}</pre>
             </div>
@@ -1509,6 +1533,74 @@ class App {
     } catch (error) {
       this.showError(
         this.getUserFriendlyErrorMessage(error, "Failed to analyze email"),
+      );
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  async translateEmailBodyToEnglish(emailId) {
+    const statusEl = document.getElementById("email-translate-status");
+    const panel = document.getElementById("email-translation-panel");
+    const metaEl = document.getElementById("email-translation-meta");
+    const preEl = document.getElementById("email-translation-text");
+    if (statusEl) statusEl.textContent = "Translating… (long emails are split into chunks)";
+    try {
+      this.showLoading("Translating to English…");
+      const response = await api.translateEmailBodyToEnglish(emailId);
+      const d = response.data || {};
+      const text = d.translated_text ?? "";
+      if (panel) panel.style.display = "block";
+      if (preEl) preEl.textContent = text || "(Empty)";
+      if (metaEl) {
+        const parts = [];
+        if (d.chunk_count != null) parts.push(`${d.chunk_count} chunk(s)`);
+        if (d.model) parts.push(`model: ${d.model}`);
+        metaEl.textContent = parts.join(" · ");
+      }
+      if (statusEl) statusEl.textContent = "Done.";
+      this.showSuccess("Translation completed");
+    } catch (error) {
+      if (statusEl) statusEl.textContent = "";
+      this.showError(
+        this.getUserFriendlyErrorMessage(error, "Translation failed"),
+      );
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  async translateAnalyzeTextToEnglish() {
+    const ta = document.getElementById("email_text");
+    const statusEl = document.getElementById("analyze-translate-status");
+    const panel = document.getElementById("analyze-translation-panel");
+    const metaEl = document.getElementById("analyze-translation-meta");
+    const preEl = document.getElementById("analyze-translation-text");
+    const raw = ta ? ta.value.trim() : "";
+    if (!raw) {
+      this.showError("Please enter some text to translate");
+      return;
+    }
+    if (statusEl) statusEl.textContent = "Translating…";
+    try {
+      this.showLoading("Translating to English…");
+      const response = await api.translateTextToEnglish(raw);
+      const d = response.data || {};
+      const text = d.translated_text ?? "";
+      if (panel) panel.style.display = "block";
+      if (preEl) preEl.textContent = text || "(Empty)";
+      if (metaEl) {
+        const parts = [];
+        if (d.chunk_count != null) parts.push(`${d.chunk_count} chunk(s)`);
+        if (d.model) parts.push(`model: ${d.model}`);
+        metaEl.textContent = parts.join(" · ");
+      }
+      if (statusEl) statusEl.textContent = "Done.";
+      this.showSuccess("Translation completed");
+    } catch (error) {
+      if (statusEl) statusEl.textContent = "";
+      this.showError(
+        this.getUserFriendlyErrorMessage(error, "Translation failed"),
       );
     } finally {
       this.hideLoading();

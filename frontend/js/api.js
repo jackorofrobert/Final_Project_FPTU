@@ -229,6 +229,15 @@ class ApiClient {
     return this.get(`/emails/vt-results?limit=${limit}&offset=${offset}`);
   }
 
+  // Translation (Gemini / Google AI Studio)
+  async translateTextToEnglish(text) {
+    return this.post("/translate/to-english", { text });
+  }
+
+  async translateEmailBodyToEnglish(emailId) {
+    return this.post(`/translate/email/${emailId}/to-english`, {});
+  }
+
   // History endpoints
   async getPredictionHistory(limit = 100, offset = 0) {
     return this.get(`/history/predictions?limit=${limit}&offset=${offset}`);

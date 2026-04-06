@@ -19,7 +19,7 @@ from starlette.responses import FileResponse
 
 from contextlib import asynccontextmanager
 
-from app.api.v1.endpoints import auth, emails, predictions, history
+from app.api.v1.endpoints import auth, emails, predictions, history, translation
 from app.core.config import settings
 from app.db.session import init_db
 from app.services.scheduler_service import start_scheduler, stop_scheduler
@@ -92,6 +92,10 @@ def create_app() -> FastAPI:
             {
                 "name": "History",
                 "description": "Prediction history endpoints. Retrieve past predictions and analysis results.",
+            },
+            {
+                "name": "Translation",
+                "description": "Translate email or text to English using Google AI Studio (Gemini), with automatic chunking for long content.",
             },
         ],
     )
@@ -177,6 +181,7 @@ def create_app() -> FastAPI:
     app.include_router(emails.router, prefix="/api/v1", tags=["Emails"])
     app.include_router(predictions.router, prefix="/api/v1", tags=["Predictions"])
     app.include_router(history.router, prefix="/api/v1", tags=["History"])
+    app.include_router(translation.router, prefix="/api/v1", tags=["Translation"])
     
     logger.info('API routers registered')
     

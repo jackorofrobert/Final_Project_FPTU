@@ -330,6 +330,47 @@ body {
     box-shadow: 0 0 0 3px rgba(52, 152, 219, 0.1);
 }
 
+.form-actions-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.email-translate-status {
+    font-size: 0.85rem;
+}
+
+.email-translation-toolbar {
+    margin-bottom: 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.email-translation-panel {
+    background: #f0f7ff;
+    border: 1px solid #cce5ff;
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1rem;
+}
+
+.email-translation-panel h4 {
+    margin-bottom: 0.35rem;
+}
+
+.email-translation-meta {
+    font-size: 0.85rem;
+    margin-bottom: 0.75rem;
+}
+
+.email-translation-content pre {
+    max-height: 420px;
+    overflow-y: auto;
+}
+
 .analysis-result {
     background: white;
     padding: 2rem;
