@@ -516,28 +516,34 @@ class App {
       let vtResultsHtml = "";
       if (vtResults.length > 0) {
         vtResultsHtml = `
-          <table class="fetch-history-table">
-            <thead>
-              <tr>
-                <th>Checked At</th>
-                <th>URL</th>
-                <th>Status</th>
-                <th>Malicious</th>
-                <th>Suspicious</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${vtResults.slice(0, 30).map((r) => `
+          <div class="table-scroll">
+            <table class="fetch-history-table">
+              <thead>
                 <tr>
-                  <td>${r.last_checked_at ? new Date(r.last_checked_at).toLocaleString() : ""}</td>
-                  <td style="max-width:420px; word-break:break-all;">${this.escapeHtml(r.url || "")}</td>
-                  <td><span class="badge ${r.status === "success" ? "badge-success" : "badge-danger"}">${r.status}</span></td>
-                  <td>${r.malicious ?? 0}</td>
-                  <td>${r.suspicious ?? 0}</td>
+                  <th>Checked At</th>
+                  <th>URL</th>
+                  <th>Status</th>
+                  <th>Malicious</th>
+                  <th>Suspicious</th>
                 </tr>
-              `).join("")}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                ${vtResults.slice(0, 30).map((r) => `
+                  <tr>
+                    <td>${r.last_checked_at ? new Date(r.last_checked_at).toLocaleString() : ""}</td>
+                    <td class="vt-url-cell">
+                      <a href="${this.escapeHtml(r.url || "#")}" target="_blank" rel="noopener noreferrer">
+                        ${this.escapeHtml(r.url || "")}
+                      </a>
+                    </td>
+                    <td><span class="badge ${r.status === "success" ? "badge-success" : "badge-danger"}">${r.status}</span></td>
+                    <td>${r.malicious ?? 0}</td>
+                    <td>${r.suspicious ?? 0}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
           <p class="text-muted" style="margin-top:8px;">Showing latest 30 results</p>`;
       } else {
         vtResultsHtml = '<p class="text-muted">No VirusTotal link result yet.</p>';
@@ -590,6 +596,14 @@ class App {
 
           <div class="sync-log-sections">
             <div class="fetch-history-list">
+              <h2>VirusTotal Link Results</h2>
+              ${vtResultsHtml}
+            </div>
+            <div class="fetch-history-list">
+              <h2>VirusTotal Scan History</h2>
+              ${vtLogsHtml}
+            </div>
+            <div class="fetch-history-list">
               <h2>Fetch History</h2>
               ${fetchLogsHtml}
             </div>
@@ -597,14 +611,6 @@ class App {
             <div class="fetch-history-list">
               <h2>Analysis History</h2>
               ${analysisLogsHtml}
-            </div>
-            <div class="fetch-history-list">
-              <h2>VirusTotal Scan History</h2>
-              ${vtLogsHtml}
-            </div>
-            <div class="fetch-history-list">
-              <h2>VirusTotal Link Results</h2>
-              ${vtResultsHtml}
             </div>
           </div>
         </div>`;

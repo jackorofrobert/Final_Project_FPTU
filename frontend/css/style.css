@@ -885,12 +885,12 @@ footer {
 
 .sync-log-sections {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1fr;
     gap: 2rem;
 }
 
 .fetch-history-list {
-    margin-top: 2rem;
+    margin-top: 0.5rem;
 }
 
 .fetch-history-list h2 {
@@ -926,6 +926,27 @@ footer {
     background-color: #f8f9fa;
 }
 
+.table-scroll {
+    width: 100%;
+    overflow-x: auto;
+}
+
+.vt-url-cell {
+    min-width: 420px;
+    max-width: 780px;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+}
+
+.vt-url-cell a {
+    color: #1f6feb;
+    text-decoration: none;
+}
+
+.vt-url-cell a:hover {
+    text-decoration: underline;
+}
+
 @media (max-width: 768px) {
     .fetch-history-header {
         flex-direction: column;
@@ -946,8 +967,8 @@ footer {
         padding: 0.5rem;
     }
 
-    .sync-log-sections {
-        grid-template-columns: 1fr;
+    .vt-url-cell {
+        min-width: 260px;
     }
 }
 
