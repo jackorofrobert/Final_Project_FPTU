@@ -159,6 +159,10 @@ class ApiClient {
     return this.get(`/emails/${emailId}/predictions`);
   }
 
+  async getEmailVTResults(emailId, limit = 100, offset = 0) {
+    return this.get(`/emails/${emailId}/vt-results?limit=${limit}&offset=${offset}`);
+  }
+
   // Prediction endpoints
   async analyzeEmail(emailText) {
     return this.post("/predictions/analyze", { email_text: emailText });

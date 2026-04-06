@@ -1274,6 +1274,7 @@ class App {
       this.showLoading();
       const response = await api.getEmail(emailId);
       const email = response.data;
+      let vtSectionHtml = "";
 
       // Build prediction HTML with detailed analysis
       let predictionHtml = '';
@@ -1404,6 +1405,58 @@ class App {
         `;
       }
 
+      // VirusTotal results for this specific email
+      try {
+        const vtResponse = await api.getEmailVTResults(emailId, 50, 0);
+        const vtResults = vtResponse.data?.results || [];
+        if (vtResults.length > 0) {
+          const vtRows = vtResults.map((r) => `
+            <tr>
+              <td>${r.last_checked_at ? new Date(r.last_checked_at).toLocaleString() : ""}</td>
+              <td class="vt-url-cell">
+                <a href="${this.escapeHtml(r.url || "#")}" target="_blank" rel="noopener noreferrer">
+                  ${this.escapeHtml(r.url || "")}
+                </a>
+              </td>
+              <td><span class="badge ${r.status === "success" ? "badge-success" : "badge-danger"}">${r.status}</span></td>
+              <td>${r.malicious ?? 0}</td>
+              <td>${r.suspicious ?? 0}</td>
+            </tr>
+          `).join("");
+
+          vtSectionHtml = `
+            <div class="links-analysis">
+              <h4>🛡️ VirusTotal Link Check (${vtResults.length})</h4>
+              <div class="table-scroll">
+                <table class="fetch-history-table">
+                  <thead>
+                    <tr>
+                      <th>Checked At</th>
+                      <th>URL</th>
+                      <th>Status</th>
+                      <th>Malicious</th>
+                      <th>Suspicious</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${vtRows}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          `;
+        } else {
+          vtSectionHtml = `
+            <div class="links-analysis">
+              <h4>🛡️ VirusTotal Link Check</h4>
+              <p class="text-muted">No VirusTotal result for this email yet. Run "VT Scan Now" in Sync Log.</p>
+            </div>
+          `;
+        }
+      } catch (vtError) {
+        console.log("Could not load VT results for email:", vtError);
+      }
+
       document.getElementById("app-content").innerHTML = `
         <div class="email-detail">
           <div class="email-header">
@@ -1416,6 +1469,7 @@ class App {
           </div>
           <div class="email-prediction">
             ${predictionHtml}
+            ${vtSectionHtml}
           </div>
           <div class="email-body">
             <h3>Email Content</h3>
