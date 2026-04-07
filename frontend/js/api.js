@@ -176,6 +176,13 @@ class ApiClient {
     return this.post(`/predictions/analyze-email/${emailId}`, {});
   }
 
+  /** Run ML on translated body; prediction is saved on the same email_id. */
+  async analyzeStoredEmailTranslated(emailId, translatedText) {
+    return this.post(`/predictions/analyze-email/${emailId}/translated`, {
+      translated_text: translatedText,
+    });
+  }
+
   // Bulk analysis endpoint
   async analyzeBulkEmails(emailIds) {
     // Analyze emails sequentially using existing endpoint
@@ -236,6 +243,14 @@ class ApiClient {
 
   async translateEmailBodyToEnglish(emailId) {
     return this.post(`/translate/email/${emailId}/to-english`, {});
+  }
+
+  async getTranslationStatus() {
+    return this.get("/translate/status");
+  }
+
+  async getTranslationHistory(limit = 50, offset = 0) {
+    return this.get(`/translate/history?limit=${limit}&offset=${offset}`);
   }
 
   // History endpoints

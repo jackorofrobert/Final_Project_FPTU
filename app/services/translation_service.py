@@ -249,6 +249,7 @@ async def translate_to_english(text: str) -> dict[str, Any]:
             "chunk_count": 0,
             "source_chars": source_chars,
             "model": model,
+            "urls_preserved_count": len(placeholders),
         }
 
     if len(chunks) > MAX_CHUNKS_HARD_CAP:
@@ -283,4 +284,5 @@ async def translate_to_english(text: str) -> dict[str, Any]:
         "chunk_count": len(chunks),
         "source_chars": source_chars,
         "model": model,
+        "urls_preserved_count": len(placeholders),
     }

@@ -9,17 +9,17 @@ class Prediction:
     @staticmethod
     def create(email_id: int, prediction: int, probability: float, model_version: str = None,
                ensemble_score: float = None, classification: str = None, threshold: float = None,
-               suspicious_margin: float = None) -> dict:
+               suspicious_margin: float = None, input_source: str = 'original') -> dict:
         """Create a new prediction record."""
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 '''INSERT INTO predictions 
                    (email_id, prediction, probability, ensemble_score, classification, 
-                    threshold, suspicious_margin, model_version) 
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)''',
+                    threshold, suspicious_margin, model_version, input_source) 
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                 (email_id, prediction, probability, ensemble_score, classification, 
-                 threshold, suspicious_margin, model_version)
+                 threshold, suspicious_margin, model_version, input_source)
             )
             prediction_id = cursor.lastrowid
             # Fetch the created record in the same connection

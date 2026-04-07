@@ -5,6 +5,16 @@ from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, Literal
 
 
+class TranslatedEmailAnalysisRequest(BaseModel):
+    """Run phishing ML on translated body while keeping the same stored email."""
+
+    translated_text: str = Field(
+        ...,
+        description="Translated email body to analyze (English recommended)",
+        min_length=1,
+    )
+
+
 class PredictionRequest(BaseModel):
     """Prediction request schema."""
     email_text: str = Field(..., description="Email content to analyze for phishing detection", min_length=1)

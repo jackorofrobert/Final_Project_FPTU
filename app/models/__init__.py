@@ -8,6 +8,7 @@ from app.models.fetch_log import FetchLog
 from app.models.analysis_log import AnalysisLog
 from app.models.vt_link_check import VTLinkCheck, VTDailyUsage
 from app.models.vt_scan_log import VTScanLog
+from app.models.translation_log import TranslationLog
 
 __all__ = [
     'User', 
@@ -22,4 +23,5 @@ __all__ = [
     'VTLinkCheck',
     'VTDailyUsage',
     'VTScanLog',
+    'TranslationLog',
 ]

@@ -313,6 +313,10 @@ class App {
             <div id="analyze-translation-panel" class="email-translation-panel" style="display:none;margin-top:1rem;">
               <h4>English translation</h4>
               <p class="text-muted" id="analyze-translation-meta"></p>
+              <div class="form-actions-row" style="margin-bottom:0.75rem;">
+                <button type="button" class="btn btn-sm btn-primary" onclick="app.analyzeTranslatedPasteWithML()">Run ML on English</button>
+                <span class="text-muted" style="font-size:0.85rem;">Runs the same model on the translated text below.</span>
+              </div>
               <div class="email-content email-translation-content">
                 <pre id="analyze-translation-text"></pre>
               </div>
@@ -342,6 +346,7 @@ class App {
                                 <th>Email Subject</th>
                                 <th>Sender</th>
                                 <th>Prediction</th>
+                                <th>ML input</th>
                                 <th>Confidence</th>
                                 <th>Date</th>
                                 <th>Actions</th>
@@ -357,6 +362,7 @@ class App {
                                     <td>
                                         ${this.renderPredictionBadge(pred)}
                                     </td>
+                                    <td>${this.renderInputSourceLabel(pred.input_source)}</td>
                                     <td>${(pred.probability * 100).toFixed(2)}%</td>
                                     <td>${pred.created_at ? pred.created_at.substring(0, 10) : ""}</td>
                                     <td>
@@ -404,7 +410,17 @@ class App {
     }
 
     try {
-      const [statusRes, logsRes, analysisStatusRes, analysisLogsRes, vtStatusRes, vtLogsRes, vtResultsRes] =
+      const [
+        statusRes,
+        logsRes,
+        analysisStatusRes,
+        analysisLogsRes,
+        vtStatusRes,
+        vtLogsRes,
+        vtResultsRes,
+        translationStatusRes,
+        translationHistoryRes,
+      ] =
         await Promise.all([
           api.getFetchStatus(),
           api.getFetchHistory(50, 0),
@@ -413,6 +429,8 @@ class App {
           api.getVTStatus(),
           api.getVTHistory(50, 0),
           api.getVTResults(100, 0),
+          api.getTranslationStatus(),
+          api.getTranslationHistory(50, 0),
         ]);
 
       const { last_fetch_at, total_emails } = statusRes.data;
@@ -422,6 +440,8 @@ class App {
       const vtUsage = vtStatusRes.data;
       const vtLogs = vtLogsRes.data.logs || [];
       const vtResults = vtResultsRes.data.results || [];
+      const trStats = translationStatusRes.data || {};
+      const translationLogs = translationHistoryRes.data.logs || [];
 
       const lastSync = last_fetch_at
         ? new Date(last_fetch_at).toLocaleString()
@@ -560,6 +580,54 @@ class App {
         vtResultsHtml = '<p class="text-muted">No VirusTotal link result yet.</p>';
       }
 
+      const trTotal = trStats.total_runs ?? 0;
+      const trOk = trStats.success_count ?? 0;
+      const trFail = trStats.failure_count ?? 0;
+      const lastTr = trStats.last_translation_at
+        ? new Date(trStats.last_translation_at).toLocaleString()
+        : "Never";
+
+      let translationLogsHtml = "";
+      if (translationLogs.length > 0) {
+        translationLogsHtml = `
+          <div class="table-scroll">
+            <table class="fetch-history-table">
+              <thead>
+                <tr>
+                  <th>Time</th>
+                  <th>OK</th>
+                  <th>Source</th>
+                  <th>Email</th>
+                  <th>Chars</th>
+                  <th>Chunks</th>
+                  <th>URLs kept</th>
+                  <th>Model</th>
+                  <th>ms</th>
+                  <th>Error</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${translationLogs.map((log) => `
+                  <tr>
+                    <td>${log.created_at ? new Date(log.created_at).toLocaleString() : ""}</td>
+                    <td><span class="badge ${log.success ? "badge-success" : "badge-danger"}">${log.success ? "yes" : "no"}</span></td>
+                    <td><span class="badge ${log.source === "email" ? "badge-info" : "badge-secondary"}">${this.escapeHtml(log.source || "")}</span></td>
+                    <td>${log.email_id != null ? log.email_id : "—"}</td>
+                    <td>${log.source_chars ?? 0}</td>
+                    <td>${log.chunk_count ?? 0}</td>
+                    <td>${log.urls_preserved ?? 0}</td>
+                    <td><small>${this.escapeHtml((log.model || "").substring(0, 24))}</small></td>
+                    <td>${log.duration_ms ?? 0}</td>
+                    <td class="vt-url-cell"><small>${log.error_message ? this.escapeHtml(String(log.error_message).substring(0, 120)) : "—"}</small></td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>`;
+      } else {
+        translationLogsHtml = '<p class="text-muted">No translation runs yet. Use “Translate to English (AI)” on an email or the Analyze page.</p>';
+      }
+
       document.getElementById("app-content").innerHTML = `
         <div class="fetch-history-page">
           <div class="fetch-history-header">
@@ -603,9 +671,33 @@ class App {
               <h3>VT Remaining</h3>
               <p class="status-value ${vtUsage.remaining < 20 ? "status-warning" : "status-active"}">${vtUsage.remaining}</p>
             </div>
+            <div class="status-card">
+              <h3>Last Translation</h3>
+              <p class="status-value">${lastTr}</p>
+            </div>
+            <div class="status-card">
+              <h3>Translation Runs</h3>
+              <p class="status-value">${trTotal} <small class="text-muted">(${trOk} ok / ${trFail} fail)</small></p>
+            </div>
+            <div class="status-card">
+              <h3>Translated Chars (ok)</h3>
+              <p class="status-value">${trStats.total_source_chars_ok ?? 0}</p>
+            </div>
+            <div class="status-card">
+              <h3>Gemini Chunks (ok)</h3>
+              <p class="status-value">${trStats.total_chunks_ok ?? 0}</p>
+            </div>
+            <div class="status-card">
+              <h3>URLs Preserved (ok)</h3>
+              <p class="status-value">${trStats.total_urls_preserved_ok ?? 0}</p>
+            </div>
           </div>
 
           <div class="sync-log-sections">
+            <div class="fetch-history-list">
+              <h2>Translation (AI) History</h2>
+              ${translationLogsHtml}
+            </div>
             <div class="fetch-history-list">
               <h2>VirusTotal Link Results</h2>
               ${vtResultsHtml}
@@ -1116,9 +1208,14 @@ class App {
     }
   }
 
-  async handleAnalyze(event) {
-    event.preventDefault();
-    const emailText = document.getElementById("email_text").value.trim();
+  async handleAnalyze(event, opts = {}) {
+    if (event && typeof event.preventDefault === "function") {
+      event.preventDefault();
+    }
+    const emailText =
+      opts.emailText != null
+        ? String(opts.emailText).trim()
+        : document.getElementById("email_text").value.trim();
 
     if (!emailText) {
       this.showError("Please enter email content");
@@ -1310,12 +1407,21 @@ class App {
           alertTitle = 'Suspicious Email';
         }
         
+        const inputSrc = pred.input_source || "original";
+        const inputSrcLabel =
+          inputSrc === "translated_body"
+            ? '<span class="badge badge-info">ML on English translation</span>'
+            : inputSrc === "manual_paste"
+              ? '<span class="badge badge-secondary">ML on pasted text</span>'
+              : '<span class="badge badge-secondary">ML on original body</span>';
+
         // Main alert
         predictionHtml = `
           <div class="alert ${alertClass}">
             <strong>${alertIcon} ${alertTitle}</strong>
             <p>Classification: <strong>${classification}</strong></p>
             <p>Confidence: ${(ensembleScore * 100).toFixed(2)}%</p>
+            <p style="margin-top:8px;">${inputSrcLabel}</p>
           </div>
         `;
         
@@ -1497,6 +1603,10 @@ class App {
             <div id="email-translation-panel" class="email-translation-panel" style="display:none;">
               <h4>English translation</h4>
               <p class="text-muted email-translation-meta" id="email-translation-meta"></p>
+              <div class="form-actions-row" style="margin-bottom:0.75rem;">
+                <button type="button" class="btn btn-sm btn-primary" onclick="app.analyzeTranslatedEmail(${email.id})">Run ML on English text</button>
+                <span class="text-muted" style="font-size:0.85rem;">Saves a new prediction on this email using the translated body.</span>
+              </div>
               <div class="email-content email-translation-content">
                 <pre id="email-translation-text"></pre>
               </div>
@@ -1537,6 +1647,37 @@ class App {
     } finally {
       this.hideLoading();
     }
+  }
+
+  async analyzeTranslatedEmail(emailId) {
+    const pre = document.getElementById("email-translation-text");
+    const text = pre && pre.textContent ? pre.textContent.trim() : "";
+    if (!text || text === "(Empty)") {
+      this.showError("Translate the email first, then run ML on the English text.");
+      return;
+    }
+    try {
+      this.showLoading("Running ML on translated body...");
+      await api.analyzeStoredEmailTranslated(emailId, text);
+      this.showSuccess("Prediction saved using English translation for this email.");
+      await this.viewEmail(emailId);
+    } catch (error) {
+      this.showError(
+        this.getUserFriendlyErrorMessage(error, "Failed to analyze translated text"),
+      );
+    } finally {
+      this.hideLoading();
+    }
+  }
+
+  async analyzeTranslatedPasteWithML() {
+    const pre = document.getElementById("analyze-translation-text");
+    const text = pre && pre.textContent ? pre.textContent.trim() : "";
+    if (!text || text === "(Empty)") {
+      this.showError("Translate first, then run ML on the English text.");
+      return;
+    }
+    await this.handleAnalyze({ preventDefault: () => {} }, { emailText: text });
   }
 
   async translateEmailBodyToEnglish(emailId) {
@@ -1761,6 +1902,17 @@ class App {
     return badges[severity] || 'secondary';
   }
   
+  renderInputSourceLabel(inputSource) {
+    const src = inputSource || "original";
+    if (src === "translated_body") {
+      return '<span class="badge badge-info" title="Model used English translation">EN translate</span>';
+    }
+    if (src === "manual_paste") {
+      return '<span class="badge badge-secondary" title="Analyze page / pasted text">Paste</span>';
+    }
+    return '<span class="badge badge-secondary" title="Stored email body">Original</span>';
+  }
+
   renderPredictionBadge(prediction) {
     if (!prediction) {
       return `<span class="badge badge-secondary">Not Analyzed</span>`;

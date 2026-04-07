@@ -1,6 +1,7 @@
 """
 Prediction endpoints for ML prediction API routes.
 """
+import re
 import time
 from datetime import datetime
 
@@ -8,7 +9,7 @@ from fastapi import APIRouter, Request, Depends
 
 from app.core.dependencies import get_current_user_dependency, get_optional_user_dependency
 from app.models import Email
-from app.schemas.prediction import PredictionRequest
+from app.schemas.prediction import PredictionRequest, TranslatedEmailAnalysisRequest
 from app.services.email_service import EmailService
 from app.services.prediction_service import PredictionService
 from app.utils.api_response import success_response, error_response, unauthorized_response, not_found_response
@@ -131,7 +132,8 @@ async def analyze(
                 result['prediction'],
                 result['probability'],
                 PredictionService.get_model_version(),
-                result
+                result,
+                input_source='manual_paste',
             )
             logger.info(f'Prediction saved to database [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]')
         
@@ -278,7 +280,8 @@ async def analyze_email(
             result['prediction'],
             result['probability'],
             PredictionService.get_model_version(),
-            result
+            result,
+            input_source='original',
         )
         
         logger.info(f'Email prediction saved [email_id={email_id}] [prediction_id={prediction["id"]}] [user_id={user_id}] [request_id={request_id}]')
@@ -291,6 +294,100 @@ async def analyze_email(
     except Exception as e:
         logger.error(f'Error analyzing email [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
         return error_response(error=str(e), message='Error analyzing email', status_code=500)
+
+
+@router.post(
+    "/analyze-email/{email_id}/translated",
+    summary="Analyze stored email using translated body",
+    description=(
+        "Runs the phishing ML model on the provided translated text while linking the "
+        "prediction to the same email record. Original subject and sender domain are "
+        "reused for ensemble features; link/urgent counts are derived from the translated body."
+    ),
+    tags=["Predictions"],
+)
+async def analyze_email_translated_body(
+    request: Request,
+    email_id: int,
+    body: TranslatedEmailAnalysisRequest,
+    user_id: int = Depends(get_current_user_dependency),
+):
+    """
+    Predict on translated content for an existing email (adds a new prediction row).
+    """
+    request_id = getattr(request.state, "request_id", "unknown")
+    try:
+        logger.info(
+            f'Translated-body prediction requested [email_id={email_id}] '
+            f'[user_id={user_id}] [request_id={request_id}]'
+        )
+        email = EmailService.get_email_by_id(email_id)
+
+        if not email:
+            logger.warning(
+                f'Email not found for translated prediction [email_id={email_id}] '
+                f'[user_id={user_id}] [request_id={request_id}]'
+            )
+            return not_found_response("Email not found")
+
+        if email["user_id"] != user_id:
+            logger.warning(
+                f'Translated prediction access denied [email_id={email_id}] '
+                f'[user_id={user_id}] [request_id={request_id}]'
+            )
+            return unauthorized_response("Access denied")
+
+        translated = body.translated_text.strip()
+        if not translated:
+            return error_response(message="Translated text is required", status_code=400)
+
+        sender_domain = None
+        if email.get("sender"):
+            email_match = re.search(r"@([a-zA-Z0-9.-]+)", email["sender"])
+            if email_match:
+                sender_domain = email_match.group(1).lower()
+
+        result = PredictionService.predict(
+            email_text=translated,
+            subject=email.get("subject"),
+            sender_domain=sender_domain,
+        )
+
+        logger.info(
+            f'Translated-body prediction completed: prediction={result["prediction"]} '
+            f'probability={result["probability"]:.4f} [email_id={email_id}] '
+            f'[user_id={user_id}] [request_id={request_id}]'
+        )
+
+        prediction = EmailService.create_prediction(
+            email_id,
+            result["prediction"],
+            result["probability"],
+            PredictionService.get_model_version(),
+            result,
+            input_source="translated_body",
+        )
+
+        logger.info(
+            f'Translated-body prediction saved [email_id={email_id}] '
+            f'[prediction_id={prediction["id"]}] [user_id={user_id}] [request_id={request_id}]'
+        )
+
+        return success_response(
+            data={
+                "prediction": prediction,
+                "result": result,
+                "is_phishing": result["prediction"] == 1,
+            },
+            message="Email analyzed successfully (translated content)",
+        )
+    except Exception as e:
+        logger.error(
+            f'Error analyzing translated email [email_id={email_id}] '
+            f'[user_id={user_id}] [request_id={request_id}]: {str(e)}',
+            exc_info=True,
+        )
+        return error_response(error=str(e), message="Error analyzing email", status_code=500)
 
 
 @router.get(

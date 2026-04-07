@@ -56,9 +56,10 @@ class EmailService:
     
     @staticmethod
     def create_prediction(email_id: int, prediction: int, probability: float, 
-                         model_version: str = None, result: dict = None) -> dict:
+                         model_version: str = None, result: dict = None,
+                         input_source: str = 'original') -> dict:
         """Create a prediction record with full details."""
-        logger.debug(f'Creating prediction record [email_id={email_id}] [prediction={prediction}] [probability={probability:.4f}]')
+        logger.debug(f'Creating prediction record [email_id={email_id}] [prediction={prediction}] [probability={probability:.4f}] [input_source={input_source}]')
         
         # Create main prediction record
         pred = Prediction.create(
@@ -69,7 +70,8 @@ class EmailService:
             ensemble_score=result.get('ensemble_score') if result else None,
             classification=result.get('classification') if result else None,
             threshold=result.get('threshold') if result else None,
-            suspicious_margin=result.get('suspicious_margin') if result else None
+            suspicious_margin=result.get('suspicious_margin') if result else None,
+            input_source=input_source,
         )
         
         if not pred:
@@ -142,7 +144,8 @@ class EmailService:
             result['prediction'],
             result['probability'],
             model_version or PredictionService.get_model_version(),
-            result
+            result,
+            input_source='original',
         )
         
         return {

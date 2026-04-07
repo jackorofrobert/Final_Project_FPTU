@@ -125,10 +125,18 @@ def init_db():
                     threshold REAL,
                     suspicious_margin REAL,
                     model_version TEXT,
+                    input_source TEXT NOT NULL DEFAULT 'original',
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     FOREIGN KEY (email_id) REFERENCES emails(id) ON DELETE CASCADE
                 )
             ''')
+            cursor.execute("PRAGMA table_info(predictions)")
+            pred_columns = [col[1] for col in cursor.fetchall()]
+            if 'input_source' not in pred_columns:
+                logger.info('Migrating predictions table: adding input_source column')
+                cursor.execute(
+                    "ALTER TABLE predictions ADD COLUMN input_source TEXT NOT NULL DEFAULT 'original'"
+                )
             
             # Create prediction_features table (extracted features)
             logger.debug('Creating prediction_features table')
@@ -257,6 +265,28 @@ def init_db():
             if 'source' not in vt_log_columns:
                 logger.info('Migrating vt_scan_logs table: adding source column')
                 cursor.execute("ALTER TABLE vt_scan_logs ADD COLUMN source TEXT NOT NULL DEFAULT 'scheduler'")
+
+            # Translation analytics (Gemini / AI Studio)
+            logger.debug('Creating translation_logs table')
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS translation_logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    source TEXT NOT NULL,
+                    email_id INTEGER,
+                    success INTEGER NOT NULL DEFAULT 1,
+                    chunk_count INTEGER NOT NULL DEFAULT 0,
+                    source_chars INTEGER NOT NULL DEFAULT 0,
+                    translated_chars INTEGER NOT NULL DEFAULT 0,
+                    model TEXT NOT NULL DEFAULT '',
+                    duration_ms INTEGER NOT NULL DEFAULT 0,
+                    urls_preserved INTEGER NOT NULL DEFAULT 0,
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (email_id) REFERENCES emails(id) ON DELETE SET NULL
+                )
+            ''')
             
             # Create indexes for better performance
             logger.debug('Creating database indexes')
@@ -273,6 +303,11 @@ def init_db():
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_vt_link_checks_email_id ON vt_link_checks(email_id)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_vt_link_checks_url_hash ON vt_link_checks(url_hash)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_vt_scan_logs_user_id ON vt_scan_logs(user_id)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_translation_logs_user_id ON translation_logs(user_id)')
+            cursor.execute(
+                'CREATE INDEX IF NOT EXISTS idx_translation_logs_user_created '
+                'ON translation_logs(user_id, created_at DESC)'
+            )
             
         logger.info(f'Database initialization completed [db_path={db_path}]')
     except Exception as e:
