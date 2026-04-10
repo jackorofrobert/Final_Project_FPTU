@@ -39,6 +39,7 @@ TRUSTED_DOMAINS = [
     # Thêm domain của bạn ở đây, ví dụ:
     # 'company.com',
     # 'partner.vn',
+    'spktfpt.online'
 ]
 
 # URL Shortener domains - often used to hide malicious links
