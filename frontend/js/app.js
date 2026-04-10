@@ -306,6 +306,9 @@ class App {
                     <div class="form-actions-row">
                       <button type="submit" class="btn btn-primary">Analyze</button>
                       <button type="button" class="btn btn-secondary" onclick="app.translateAnalyzeTextToEnglish()">Translate to English (AI)</button>
+                      <button type="button" class="btn btn-primary" onclick="app.analyzeTranslatedPasteWithML()" title="Dùng nội dung trong khung English translation bên dưới">
+                        Phân tích bản dịch (ML)
+                      </button>
                       <span id="analyze-translate-status" class="text-muted email-translate-status"></span>
                     </div>
                 </form>
@@ -314,8 +317,8 @@ class App {
               <h4>English translation</h4>
               <p class="text-muted" id="analyze-translation-meta"></p>
               <div class="form-actions-row" style="margin-bottom:0.75rem;">
-                <button type="button" class="btn btn-sm btn-primary" onclick="app.analyzeTranslatedPasteWithML()">Run ML on English</button>
-                <span class="text-muted" style="font-size:0.85rem;">Runs the same model on the translated text below.</span>
+                <button type="button" class="btn btn-sm btn-primary" onclick="app.analyzeTranslatedPasteWithML()">Phân tích bản dịch (ML)</button>
+                <span class="text-muted" style="font-size:0.85rem;">Gọi model trên đoạn English bên dưới (giống nút phía trên).</span>
               </div>
               <div class="email-content email-translation-content">
                 <pre id="analyze-translation-text"></pre>
@@ -1598,14 +1601,17 @@ class App {
               <button type="button" class="btn btn-sm btn-secondary" onclick="app.translateEmailBodyToEnglish(${email.id})">
                 Translate to English (AI)
               </button>
+              <button type="button" class="btn btn-sm btn-primary" onclick="app.analyzeTranslatedEmail(${email.id})" title="Cần có bản dịch trong khung English bên dưới — bấm Translate trước nếu chưa có">
+                Phân tích bản dịch (ML)
+              </button>
               <span id="email-translate-status" class="text-muted email-translate-status"></span>
             </div>
             <div id="email-translation-panel" class="email-translation-panel" style="display:none;">
               <h4>English translation</h4>
               <p class="text-muted email-translation-meta" id="email-translation-meta"></p>
               <div class="form-actions-row" style="margin-bottom:0.75rem;">
-                <button type="button" class="btn btn-sm btn-primary" onclick="app.analyzeTranslatedEmail(${email.id})">Run ML on English text</button>
-                <span class="text-muted" style="font-size:0.85rem;">Saves a new prediction on this email using the translated body.</span>
+                <button type="button" class="btn btn-sm btn-primary" onclick="app.analyzeTranslatedEmail(${email.id})">Phân tích bản dịch (ML)</button>
+                <span class="text-muted" style="font-size:0.85rem;">Lưu prediction mới (input_source = bản dịch) cho email này.</span>
               </div>
               <div class="email-content email-translation-content">
                 <pre id="email-translation-text"></pre>
@@ -1653,13 +1659,13 @@ class App {
     const pre = document.getElementById("email-translation-text");
     const text = pre && pre.textContent ? pre.textContent.trim() : "";
     if (!text || text === "(Empty)") {
-      this.showError("Translate the email first, then run ML on the English text.");
+      this.showError("Chưa có bản dịch: bấm “Translate to English (AI)” trước, rồi bấm “Phân tích bản dịch (ML)”.");
       return;
     }
     try {
-      this.showLoading("Running ML on translated body...");
+      this.showLoading("Đang chạy model trên bản dịch…");
       await api.analyzeStoredEmailTranslated(emailId, text);
-      this.showSuccess("Prediction saved using English translation for this email.");
+      this.showSuccess("Đã lưu kết quả phân tích từ bản dịch tiếng Anh.");
       await this.viewEmail(emailId);
     } catch (error) {
       this.showError(
@@ -1674,7 +1680,7 @@ class App {
     const pre = document.getElementById("analyze-translation-text");
     const text = pre && pre.textContent ? pre.textContent.trim() : "";
     if (!text || text === "(Empty)") {
-      this.showError("Translate first, then run ML on the English text.");
+      this.showError("Chưa có bản dịch: bấm “Translate to English (AI)” trước, rồi bấm “Phân tích bản dịch (ML)”.");
       return;
     }
     await this.handleAnalyze({ preventDefault: () => {} }, { emailText: text });
