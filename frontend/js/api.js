@@ -134,8 +134,9 @@ class ApiClient {
     return this.get("/auth/status");
   }
 
-  async connectGmail() {
-    return this.post("/auth/connect", {});
+  /** Connect using email + password (replaces OAuth redirect). */
+  async connectMail(email, password, label = "INBOX") {
+    return this.post("/auth/connect", { email, password, label });
   }
 
   async disconnectGmail() {
@@ -253,9 +254,54 @@ class ApiClient {
     return this.get(`/translate/history?limit=${limit}&offset=${offset}`);
   }
 
+  async getEmailLatestTranslation(emailId) {
+    return this.get(`/translate/email/${emailId}/latest`);
+  }
+
   // History endpoints
   async getPredictionHistory(limit = 100, offset = 0) {
     return this.get(`/history/predictions?limit=${limit}&offset=${offset}`);
+  }
+
+  // ── Statistics endpoints ──────────────────────────────────────────
+  async getStatsOverview() {
+    return this.get("/stats/overview");
+  }
+
+  async getStatsTrend(days = 30) {
+    return this.get(`/stats/trend?days=${days}`);
+  }
+
+  async getStatsClassification() {
+    return this.get("/stats/classification");
+  }
+
+  async getStatsTopSenders(limit = 10) {
+    return this.get(`/stats/top-senders?limit=${limit}`);
+  }
+
+  async getStatsTopDomains(limit = 10) {
+    return this.get(`/stats/top-domains?limit=${limit}`);
+  }
+
+  async getStatsFeatures() {
+    return this.get("/stats/features");
+  }
+
+  async getStatsSegments() {
+    return this.get("/stats/segments");
+  }
+
+  async getStatsLinks(topN = 10) {
+    return this.get(`/stats/links?top_n=${topN}`);
+  }
+
+  async getStatsTimeline(days = 90) {
+    return this.get(`/stats/timeline?days=${days}`);
+  }
+
+  async getStatsProbabilityDist() {
+    return this.get("/stats/probability-dist");
   }
 }
 

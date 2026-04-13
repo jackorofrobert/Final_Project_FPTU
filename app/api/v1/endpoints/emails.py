@@ -1,15 +1,29 @@
 """
 Email endpoints for email API routes.
 """
+
 from fastapi import APIRouter, Request, Depends, Query
 
 from app.core.dependencies import get_current_user_dependency
-from app.models import Email, Prediction, User, FetchLog, AnalysisLog, VTLinkCheck, VTScanLog
+from app.models import (
+    Email,
+    Prediction,
+    User,
+    FetchLog,
+    AnalysisLog,
+    VTLinkCheck,
+    VTScanLog,
+)
 from app.schemas.email import EmailFetchRequest
 from app.services.email_service import EmailService
-from app.services.gmail_service import GmailService
+from app.services.mail_api_service import MailApiService
 from app.services.virustotal_service import VirusTotalService
-from app.utils.api_response import success_response, error_response, unauthorized_response, not_found_response
+from app.utils.api_response import (
+    success_response,
+    error_response,
+    unauthorized_response,
+    not_found_response,
+)
 from app.utils.logger import get_logger
 
 router = APIRouter(prefix="/emails")
@@ -18,8 +32,8 @@ logger = get_logger(__name__)
 
 @router.post(
     "/fetch",
-    summary="Fetch emails from Gmail",
-    description="Fetch emails from the authenticated user's Gmail account using the Gmail API. Emails are fetched and stored in the database for analysis. Requires authentication.",
+    summary="Fetch emails from mail server",
+    description="Fetch emails from the archive mailbox via the custom mail API. Emails are stored in the database for analysis. Requires authentication.",
     responses={
         200: {
             "description": "Emails fetched and stored successfully",
@@ -35,25 +49,22 @@ logger = get_logger(__name__)
                                     "gmail_message_id": "abc123",
                                     "subject": "Test Email",
                                     "sender": "sender@example.com",
-                                    "recipient": "recipient@example.com"
+                                    "recipient": "recipient@example.com",
                                 }
-                            ]
+                            ],
                         },
-                        "message": "Successfully fetched and stored 3 emails"
+                        "message": "Successfully fetched and stored 3 emails",
                     }
                 }
-            }
+            },
         },
         401: {
             "description": "Authentication required",
             "content": {
                 "application/json": {
-                    "example": {
-                        "success": False,
-                        "message": "Authentication required"
-                    }
+                    "example": {"success": False, "message": "Authentication required"}
                 }
-            }
+            },
         },
         500: {
             "description": "Error fetching emails",
@@ -62,73 +73,89 @@ logger = get_logger(__name__)
                     "example": {
                         "success": False,
                         "error": "Gmail API error",
-                        "message": "Error fetching emails"
+                        "message": "Error fetching emails",
                     }
                 }
-            }
-        }
+            },
+        },
     },
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def fetch(
     request: Request,
     fetch_request: EmailFetchRequest = EmailFetchRequest(),
-    user_id: int = Depends(get_current_user_dependency)
+    user_id: int = Depends(get_current_user_dependency),
 ):
     """
-    Fetch emails from Gmail API.
-    
-    Retrieves emails from the user's Gmail inbox and stores them in the database.
+    Fetch emails from the mail API.
+
+    Retrieves emails from the archive mailbox and stores them in the database.
     The number of emails fetched is limited by the max_results parameter (default: 50, max: 500).
     """
-    request_id = getattr(request.state, 'request_id', 'unknown')
-    
+    request_id = getattr(request.state, "request_id", "unknown")
+
     try:
         max_results = min(fetch_request.max_results, 500)  # Cap at 500
-        
+
         user = User.get_by_id(user_id)
-        last_fetch = user.get('last_fetch_at') if user else None
-        logger.info(f'Email fetch requested [user_id={user_id}] [max_results={max_results}] [after={last_fetch}] [request_id={request_id}]')
-        
-        emails = GmailService.fetch_emails(user_id, max_results=max_results, after=last_fetch)
-        
+        last_fetch = user.get("last_fetch_at") if user else None
+        logger.info(
+            f"Email fetch requested [user_id={user_id}] [max_results={max_results}] [after={last_fetch}] [request_id={request_id}]"
+        )
+
+        emails = MailApiService.fetch_emails(
+            user_id, max_results=max_results, after=last_fetch
+        )
+
         # Store emails in database
         stored_count = 0
         new_count = 0
         stored_emails = []
         for email_data in emails:
-            existing = EmailService.get_email_by_gmail_id(user_id, email_data['gmail_message_id'])
+            existing = EmailService.get_email_by_gmail_id(
+                user_id, email_data["gmail_message_id"]
+            )
             email = EmailService.create_email(
                 user_id=user_id,
-                gmail_message_id=email_data['gmail_message_id'],
-                subject=email_data['subject'],
-                sender=email_data['sender'],
-                recipient=email_data['recipient'],
-                body=email_data['body'],
-                received_at=email_data['received_at']
+                gmail_message_id=email_data["gmail_message_id"],
+                subject=email_data["subject"],
+                sender=email_data["sender"],
+                recipient=email_data["recipient"],
+                body=email_data["body"],
+                received_at=email_data["received_at"],
             )
             stored_emails.append(email)
             stored_count += 1
             if not existing:
                 new_count += 1
-        
+
         User.update_last_fetch(user_id)
         FetchLog.create(
             user_id=user_id,
-            source='manual',
+            source="manual",
             emails_fetched=len(emails),
-            new_emails=new_count
+            new_emails=new_count,
         )
-        
-        logger.info(f'Email fetch completed: {stored_count} total, {new_count} new [user_id={user_id}] [request_id={request_id}]')
-        return success_response(data={
-            'count': stored_count,
-            'new_count': new_count,
-            'emails': stored_emails
-        }, message=f'Fetched {stored_count} emails ({new_count} new)')
+
+        logger.info(
+            f"Email fetch completed: {stored_count} total, {new_count} new [user_id={user_id}] [request_id={request_id}]"
+        )
+        return success_response(
+            data={
+                "count": stored_count,
+                "new_count": new_count,
+                "emails": stored_emails,
+            },
+            message=f"Fetched {stored_count} emails ({new_count} new)",
+        )
     except Exception as e:
-        logger.error(f'Error fetching emails [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error fetching emails', status_code=500)
+        logger.error(
+            f"Error fetching emails [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error fetching emails", status_code=500
+        )
 
 
 @router.get(
@@ -148,26 +175,23 @@ async def fetch(
                                     "id": 1,
                                     "subject": "Test Email",
                                     "sender": "sender@example.com",
-                                    "prediction": None
+                                    "prediction": None,
                                 }
                             ],
                             "limit": 50,
-                            "offset": 0
-                        }
+                            "offset": 0,
+                        },
                     }
                 }
-            }
+            },
         },
         401: {
             "description": "Authentication required",
             "content": {
                 "application/json": {
-                    "example": {
-                        "success": False,
-                        "message": "Authentication required"
-                    }
+                    "example": {"success": False, "message": "Authentication required"}
                 }
-            }
+            },
         },
         500: {
             "description": "Error retrieving email list",
@@ -176,308 +200,379 @@ async def fetch(
                     "example": {
                         "success": False,
                         "error": "Database error",
-                        "message": "Error retrieving emails"
+                        "message": "Error retrieving emails",
                     }
                 }
-            }
-        }
+            },
+        },
     },
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def list_emails(
     request: Request,
-    limit: int = Query(50, ge=1, le=100, description="Number of emails to return (1-100)"),
+    limit: int = Query(
+        50, ge=1, le=100, description="Number of emails to return (1-100)"
+    ),
     offset: int = Query(0, ge=0, description="Number of emails to skip for pagination"),
-    user_id: int = Depends(get_current_user_dependency)
+    user_id: int = Depends(get_current_user_dependency),
 ):
     """
     Get list of stored emails.
-    
+
     Returns a paginated list of emails for the authenticated user.
     Each email includes its latest prediction result if available.
     """
-    request_id = getattr(request.state, 'request_id', 'unknown')
-    
+    request_id = getattr(request.state, "request_id", "unknown")
+
     try:
-        logger.info(f'Email list requested [user_id={user_id}] [limit={limit}] [offset={offset}] [request_id={request_id}]')
-        
+        logger.info(
+            f"Email list requested [user_id={user_id}] [limit={limit}] [offset={offset}] [request_id={request_id}]"
+        )
+
         emails = EmailService.get_emails_by_user(user_id, limit=limit, offset=offset)
-        
+
         # Get latest prediction for each email
         for email in emails:
-            email_with_pred = EmailService.get_email_with_prediction(email['id'])
-            if email_with_pred and email_with_pred.get('prediction'):
-                email['prediction'] = email_with_pred['prediction']
+            email_with_pred = EmailService.get_email_with_prediction(email["id"])
+            if email_with_pred and email_with_pred.get("prediction"):
+                email["prediction"] = email_with_pred["prediction"]
             else:
-                email['prediction'] = None
-        
-        logger.info(f'Email list retrieved: {len(emails)} emails [user_id={user_id}] [request_id={request_id}]')
-        return success_response(data={
-            'emails': emails,
-            'limit': limit,
-            'offset': offset
-        })
+                email["prediction"] = None
+
+        logger.info(
+            f"Email list retrieved: {len(emails)} emails [user_id={user_id}] [request_id={request_id}]"
+        )
+        return success_response(
+            data={"emails": emails, "limit": limit, "offset": offset}
+        )
     except Exception as e:
-        logger.error(f'Error retrieving email list [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error retrieving emails', status_code=500)
+        logger.error(
+            f"Error retrieving email list [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error retrieving emails", status_code=500
+        )
 
 
 @router.get(
     "/fetch-status",
     summary="Get email fetch status",
     description="Get the current user's last fetch timestamp and total email count.",
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def fetch_status(
-    request: Request,
-    user_id: int = Depends(get_current_user_dependency)
+    request: Request, user_id: int = Depends(get_current_user_dependency)
 ):
     """Return last_fetch_at and email count for the authenticated user."""
-    request_id = getattr(request.state, 'request_id', 'unknown')
+    request_id = getattr(request.state, "request_id", "unknown")
     try:
         user = User.get_by_id(user_id)
         total_emails = Email.count_by_user_id(user_id)
-        return success_response(data={
-            'last_fetch_at': user.get('last_fetch_at') if user else None,
-            'total_emails': total_emails,
-        })
+        return success_response(
+            data={
+                "last_fetch_at": user.get("last_fetch_at") if user else None,
+                "total_emails": total_emails,
+            }
+        )
     except Exception as e:
-        logger.error(f'Error getting fetch status [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error getting fetch status', status_code=500)
+        logger.error(
+            f"Error getting fetch status [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error getting fetch status", status_code=500
+        )
 
 
 @router.get(
     "/fetch-history",
     summary="Get email fetch history",
     description="Get a log of all past email fetch events (manual and scheduled) for the authenticated user.",
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def fetch_history(
     request: Request,
     limit: int = Query(20, ge=1, le=100, description="Number of log entries to return"),
     offset: int = Query(0, ge=0, description="Number of log entries to skip"),
-    user_id: int = Depends(get_current_user_dependency)
+    user_id: int = Depends(get_current_user_dependency),
 ):
     """Return paginated fetch history for the authenticated user."""
-    request_id = getattr(request.state, 'request_id', 'unknown')
+    request_id = getattr(request.state, "request_id", "unknown")
     try:
         logs = FetchLog.get_by_user_id(user_id, limit=limit, offset=offset)
-        return success_response(data={
-            'logs': logs,
-            'limit': limit,
-            'offset': offset,
-        })
+        return success_response(
+            data={
+                "logs": logs,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
     except Exception as e:
-        logger.error(f'Error getting fetch history [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error getting fetch history', status_code=500)
+        logger.error(
+            f"Error getting fetch history [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error getting fetch history", status_code=500
+        )
 
 
 @router.get(
     "/analysis-status",
     summary="Get auto-analysis status",
     description="Get the current user's last analysis timestamp and count of unanalyzed emails.",
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def analysis_status(
-    request: Request,
-    user_id: int = Depends(get_current_user_dependency)
+    request: Request, user_id: int = Depends(get_current_user_dependency)
 ):
     """Return last_analysis_at and unanalyzed email count."""
-    request_id = getattr(request.state, 'request_id', 'unknown')
+    request_id = getattr(request.state, "request_id", "unknown")
     try:
         user = User.get_by_id(user_id)
         unanalyzed = Email.get_unanalyzed_by_user_id(user_id, limit=1000)
         total_emails = Email.count_by_user_id(user_id)
-        return success_response(data={
-            'last_analysis_at': user.get('last_analysis_at') if user else None,
-            'unanalyzed_count': len(unanalyzed),
-            'total_emails': total_emails,
-        })
+        return success_response(
+            data={
+                "last_analysis_at": user.get("last_analysis_at") if user else None,
+                "unanalyzed_count": len(unanalyzed),
+                "total_emails": total_emails,
+            }
+        )
     except Exception as e:
-        logger.error(f'Error getting analysis status [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error getting analysis status', status_code=500)
+        logger.error(
+            f"Error getting analysis status [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error getting analysis status", status_code=500
+        )
 
 
 @router.get(
     "/analysis-history",
     summary="Get auto-analysis history",
     description="Get a log of all past auto-analysis events for the authenticated user.",
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def analysis_history(
     request: Request,
     limit: int = Query(20, ge=1, le=100, description="Number of log entries to return"),
     offset: int = Query(0, ge=0, description="Number of log entries to skip"),
-    user_id: int = Depends(get_current_user_dependency)
+    user_id: int = Depends(get_current_user_dependency),
 ):
     """Return paginated analysis history for the authenticated user."""
-    request_id = getattr(request.state, 'request_id', 'unknown')
+    request_id = getattr(request.state, "request_id", "unknown")
     try:
         logs = AnalysisLog.get_by_user_id(user_id, limit=limit, offset=offset)
-        return success_response(data={
-            'logs': logs,
-            'limit': limit,
-            'offset': offset,
-        })
+        return success_response(
+            data={
+                "logs": logs,
+                "limit": limit,
+                "offset": offset,
+            }
+        )
     except Exception as e:
-        logger.error(f'Error getting analysis history [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error getting analysis history', status_code=500)
+        logger.error(
+            f"Error getting analysis history [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error getting analysis history", status_code=500
+        )
 
 
 @router.get(
     "/vt-status",
     summary="Get VirusTotal quota status",
     description="Get current VirusTotal daily usage and remaining requests.",
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def vt_status(
-    request: Request,
-    user_id: int = Depends(get_current_user_dependency)
+    request: Request, user_id: int = Depends(get_current_user_dependency)
 ):
     """Return VirusTotal quota usage for today."""
-    request_id = getattr(request.state, 'request_id', 'unknown')
+    request_id = getattr(request.state, "request_id", "unknown")
     try:
         usage = VirusTotalService.get_daily_usage()
         return success_response(data=usage)
     except Exception as e:
-        logger.error(f'Error getting VT status [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error getting VirusTotal status', status_code=500)
+        logger.error(
+            f"Error getting VT status [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error getting VirusTotal status", status_code=500
+        )
 
 
 @router.post(
     "/vt-scan-now",
     summary="Run VirusTotal scan now",
     description="Manually trigger VirusTotal scan immediately (does not wait for scheduler).",
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def vt_scan_now(
-    request: Request,
-    user_id: int = Depends(get_current_user_dependency)
+    request: Request, user_id: int = Depends(get_current_user_dependency)
 ):
     """Trigger manual VirusTotal scan for current user."""
-    request_id = getattr(request.state, 'request_id', 'unknown')
+    request_id = getattr(request.state, "request_id", "unknown")
     try:
         result = VirusTotalService.scan_user_email_links(user_id=user_id)
         VTScanLog.create(
             user_id=user_id,
-            source='manual',
-            checked=result['checked'],
-            skipped=result['skipped'],
-            errors=result['errors'],
-            quota_remaining=result['quota_remaining'],
+            source="manual",
+            checked=result["checked"],
+            skipped=result["skipped"],
+            errors=result["errors"],
+            quota_remaining=result["quota_remaining"],
         )
-        return success_response(data=result, message='VirusTotal scan completed')
+        return success_response(data=result, message="VirusTotal scan completed")
     except Exception as e:
-        logger.error(f'Error running VT scan now [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error running VirusTotal scan', status_code=500)
+        logger.error(
+            f"Error running VT scan now [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error running VirusTotal scan", status_code=500
+        )
 
 
 @router.get(
     "/vt-history",
     summary="Get VirusTotal scan history",
     description="Get history of scheduler/manual VirusTotal scan runs.",
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def vt_history(
     request: Request,
     limit: int = Query(20, ge=1, le=100),
     offset: int = Query(0, ge=0),
-    user_id: int = Depends(get_current_user_dependency)
+    user_id: int = Depends(get_current_user_dependency),
 ):
     """Return VT scan run logs for current user."""
-    request_id = getattr(request.state, 'request_id', 'unknown')
+    request_id = getattr(request.state, "request_id", "unknown")
     try:
         logs = VTScanLog.get_by_user_id(user_id=user_id, limit=limit, offset=offset)
-        return success_response(data={'logs': logs, 'limit': limit, 'offset': offset})
+        return success_response(data={"logs": logs, "limit": limit, "offset": offset})
     except Exception as e:
-        logger.error(f'Error getting VT history [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error getting VirusTotal history', status_code=500)
+        logger.error(
+            f"Error getting VT history [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error getting VirusTotal history", status_code=500
+        )
 
 
 @router.get(
     "/vt-results",
     summary="Get VirusTotal link results",
     description="Get stored VirusTotal results for checked links.",
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def vt_results(
     request: Request,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    user_id: int = Depends(get_current_user_dependency)
+    user_id: int = Depends(get_current_user_dependency),
 ):
     """Return stored VT link check results for current user."""
-    request_id = getattr(request.state, 'request_id', 'unknown')
+    request_id = getattr(request.state, "request_id", "unknown")
     try:
-        results = VTLinkCheck.get_by_user_id(user_id=user_id, limit=limit, offset=offset)
-        return success_response(data={'results': results, 'limit': limit, 'offset': offset})
+        results = VTLinkCheck.get_by_user_id(
+            user_id=user_id, limit=limit, offset=offset
+        )
+        return success_response(
+            data={"results": results, "limit": limit, "offset": offset}
+        )
     except Exception as e:
-        logger.error(f'Error getting VT results [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error getting VirusTotal results', status_code=500)
+        logger.error(
+            f"Error getting VT results [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error getting VirusTotal results", status_code=500
+        )
 
 
 @router.get(
     "/{email_id}/vt-results",
     summary="Get VirusTotal results for an email",
     description="Get stored VirusTotal link results for a specific email.",
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def vt_results_by_email(
     request: Request,
     email_id: int,
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
-    user_id: int = Depends(get_current_user_dependency)
+    user_id: int = Depends(get_current_user_dependency),
 ):
     """Return VirusTotal link check results for one email, with ownership check."""
-    request_id = getattr(request.state, 'request_id', 'unknown')
+    request_id = getattr(request.state, "request_id", "unknown")
     try:
         email = Email.get_by_id(email_id)
-        if not email or email['user_id'] != user_id:
-            return unauthorized_response('Access denied')
-        results = VTLinkCheck.get_by_email_id(email_id=email_id, limit=limit, offset=offset)
-        return success_response(data={'results': results, 'limit': limit, 'offset': offset})
+        if not email or email["user_id"] != user_id:
+            return unauthorized_response("Access denied")
+        results = VTLinkCheck.get_by_email_id(
+            email_id=email_id, limit=limit, offset=offset
+        )
+        return success_response(
+            data={"results": results, "limit": limit, "offset": offset}
+        )
     except Exception as e:
         logger.error(
-            f'Error getting VT results by email [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}',
-            exc_info=True
+            f"Error getting VT results by email [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
         )
-        return error_response(error=str(e), message='Error getting VirusTotal results for email', status_code=500)
+        return error_response(
+            error=str(e),
+            message="Error getting VirusTotal results for email",
+            status_code=500,
+        )
 
 
 @router.post(
     "/{email_id}/vt-scan-now",
     summary="Run VirusTotal scan now for one email",
     description="Manually trigger VirusTotal scan immediately for a specific email.",
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def vt_scan_now_by_email(
-    request: Request,
-    email_id: int,
-    user_id: int = Depends(get_current_user_dependency)
+    request: Request, email_id: int, user_id: int = Depends(get_current_user_dependency)
 ):
     """Trigger manual VT scan for one email."""
-    request_id = getattr(request.state, 'request_id', 'unknown')
+    request_id = getattr(request.state, "request_id", "unknown")
     try:
         email = Email.get_by_id(email_id)
-        if not email or email['user_id'] != user_id:
-            return unauthorized_response('Access denied')
-        result = VirusTotalService.scan_single_email_links(user_id=user_id, email_id=email_id)
+        if not email or email["user_id"] != user_id:
+            return unauthorized_response("Access denied")
+        result = VirusTotalService.scan_single_email_links(
+            user_id=user_id, email_id=email_id
+        )
         VTScanLog.create(
             user_id=user_id,
-            source='manual',
-            checked=result['checked'],
-            skipped=result['skipped'],
-            errors=result['errors'],
-            quota_remaining=result['quota_remaining'],
+            source="manual",
+            checked=result["checked"],
+            skipped=result["skipped"],
+            errors=result["errors"],
+            quota_remaining=result["quota_remaining"],
         )
-        return success_response(data=result, message='VirusTotal scan completed for this email')
+        return success_response(
+            data=result, message="VirusTotal scan completed for this email"
+        )
     except Exception as e:
         logger.error(
-            f'Error running VT scan now by email [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}',
-            exc_info=True
+            f"Error running VT scan now by email [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
         )
-        return error_response(error=str(e), message='Error running VirusTotal scan for email', status_code=500)
+        return error_response(
+            error=str(e),
+            message="Error running VirusTotal scan for email",
+            status_code=500,
+        )
 
 
 @router.get(
@@ -504,34 +599,28 @@ async def vt_scan_now_by_email(
                                 "id": 1,
                                 "prediction": 1,
                                 "probability": 0.95,
-                                "is_phishing": True
-                            }
-                        }
+                                "is_phishing": True,
+                            },
+                        },
                     }
                 }
-            }
+            },
         },
         401: {
             "description": "Authentication required",
             "content": {
                 "application/json": {
-                    "example": {
-                        "success": False,
-                        "message": "Authentication required"
-                    }
+                    "example": {"success": False, "message": "Authentication required"}
                 }
-            }
+            },
         },
         404: {
             "description": "Email not found",
             "content": {
                 "application/json": {
-                    "example": {
-                        "success": False,
-                        "message": "Email not found"
-                    }
+                    "example": {"success": False, "message": "Email not found"}
                 }
-            }
+            },
         },
         500: {
             "description": "Error retrieving email",
@@ -540,49 +629,60 @@ async def vt_scan_now_by_email(
                     "example": {
                         "success": False,
                         "error": "Database error",
-                        "message": "Error retrieving email"
+                        "message": "Error retrieving email",
                     }
                 }
-            }
-        }
+            },
+        },
     },
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def get_email(
-    request: Request,
-    email_id: int,
-    user_id: int = Depends(get_current_user_dependency)
+    request: Request, email_id: int, user_id: int = Depends(get_current_user_dependency)
 ):
     """
     Get email details.
-    
+
     Returns complete information about a specific email including:
     - Email metadata (subject, sender, recipient, timestamps)
     - Email body content
     - Latest prediction result if available
-    
+
     **Path Parameters:**
     - `email_id`: The ID of the email to retrieve
     """
-    request_id = getattr(request.state, 'request_id', 'unknown')
-    
+    request_id = getattr(request.state, "request_id", "unknown")
+
     try:
-        logger.info(f'Email detail requested [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]')
+        logger.info(
+            f"Email detail requested [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]"
+        )
         email = EmailService.get_email_with_prediction(email_id)
-        
+
         if not email:
-            logger.warning(f'Email not found [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]')
-            return not_found_response('Email not found')
-        
-        if email['user_id'] != user_id:
-            logger.warning(f'Email access denied [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]')
-            return unauthorized_response('Access denied')
-        
-        logger.info(f'Email detail retrieved [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]')
+            logger.warning(
+                f"Email not found [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]"
+            )
+            return not_found_response("Email not found")
+
+        if email["user_id"] != user_id:
+            logger.warning(
+                f"Email access denied [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]"
+            )
+            return unauthorized_response("Access denied")
+
+        logger.info(
+            f"Email detail retrieved [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]"
+        )
         return success_response(data=email)
     except Exception as e:
-        logger.error(f'Error retrieving email [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error retrieving email', status_code=500)
+        logger.error(
+            f"Error retrieving email [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error retrieving email", status_code=500
+        )
 
 
 @router.get(
@@ -604,24 +704,21 @@ async def get_email(
                                     "prediction": 1,
                                     "probability": 0.95,
                                     "model_version": "1.0.0",
-                                    "created_at": "2024-01-15T10:40:00Z"
+                                    "created_at": "2024-01-15T10:40:00Z",
                                 }
                             ]
-                        }
+                        },
                     }
                 }
-            }
+            },
         },
         401: {
             "description": "Authentication required or access denied",
             "content": {
                 "application/json": {
-                    "example": {
-                        "success": False,
-                        "message": "Access denied"
-                    }
+                    "example": {"success": False, "message": "Access denied"}
                 }
-            }
+            },
         },
         500: {
             "description": "Error retrieving predictions",
@@ -630,43 +727,52 @@ async def get_email(
                     "example": {
                         "success": False,
                         "error": "Database error",
-                        "message": "Error retrieving predictions"
+                        "message": "Error retrieving predictions",
                     }
                 }
-            }
-        }
+            },
+        },
     },
-    tags=["Emails"]
+    tags=["Emails"],
 )
 async def get_predictions(
-    request: Request,
-    email_id: int,
-    user_id: int = Depends(get_current_user_dependency)
+    request: Request, email_id: int, user_id: int = Depends(get_current_user_dependency)
 ):
     """
     Get all predictions for an email.
-    
+
     Returns the complete prediction history for a specific email.
     Useful for tracking how predictions may have changed over time
     or comparing different model versions.
-    
+
     **Path Parameters:**
     - `email_id`: The ID of the email to get predictions for
     """
-    request_id = getattr(request.state, 'request_id', 'unknown')
-    
+    request_id = getattr(request.state, "request_id", "unknown")
+
     try:
-        logger.info(f'Email predictions requested [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]')
-        
+        logger.info(
+            f"Email predictions requested [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]"
+        )
+
         # Verify email belongs to user
         email = Email.get_by_id(email_id)
-        if not email or email['user_id'] != user_id:
-            logger.warning(f'Email predictions access denied [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]')
-            return unauthorized_response('Access denied')
-        
+        if not email or email["user_id"] != user_id:
+            logger.warning(
+                f"Email predictions access denied [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]"
+            )
+            return unauthorized_response("Access denied")
+
         predictions = Prediction.get_by_email_id(email_id)
-        logger.info(f'Email predictions retrieved: {len(predictions)} predictions [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]')
-        return success_response(data={'predictions': predictions})
+        logger.info(
+            f"Email predictions retrieved: {len(predictions)} predictions [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]"
+        )
+        return success_response(data={"predictions": predictions})
     except Exception as e:
-        logger.error(f'Error retrieving email predictions [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}', exc_info=True)
-        return error_response(error=str(e), message='Error retrieving predictions', status_code=500)
+        logger.error(
+            f"Error retrieving email predictions [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error retrieving predictions", status_code=500
+        )

@@ -1,6 +1,7 @@
 """
 TranslationLog model for AI translation analytics.
 """
+
 from app.utils.database import get_db
 
 
@@ -21,6 +22,7 @@ class TranslationLog:
         duration_ms: int = 0,
         urls_preserved: int = 0,
         error_message: str | None = None,
+        translated_text: str | None = None,
     ) -> dict | None:
         with get_db() as conn:
             cursor = conn.cursor()
@@ -29,9 +31,9 @@ class TranslationLog:
                 INSERT INTO translation_logs (
                     user_id, source, email_id, success, chunk_count,
                     source_chars, translated_chars, model, duration_ms,
-                    urls_preserved, error_message
+                    urls_preserved, error_message, translated_text
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     user_id,
@@ -45,10 +47,30 @@ class TranslationLog:
                     duration_ms,
                     urls_preserved,
                     error_message,
+                    translated_text,
                 ),
             )
             log_id = cursor.lastrowid
             cursor.execute("SELECT * FROM translation_logs WHERE id = ?", (log_id,))
+            row = cursor.fetchone()
+            return dict(row) if row else None
+
+    @staticmethod
+    def get_latest_for_email(email_id: int) -> dict | None:
+        """Return the most recent successful translation for a stored email."""
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, email_id, chunk_count, source_chars, translated_chars,
+                       model, duration_ms, translated_text, created_at
+                FROM translation_logs
+                WHERE email_id = ? AND success = 1 AND translated_text IS NOT NULL
+                ORDER BY created_at DESC
+                LIMIT 1
+                """,
+                (email_id,),
+            )
             row = cursor.fetchone()
             return dict(row) if row else None
 

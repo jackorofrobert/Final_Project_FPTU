@@ -2,13 +2,14 @@
 FastAPI Application Factory
 Creates and configures the FastAPI application instance.
 """
+
 from pathlib import Path
 import uuid
 import time
 
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent / '.env')
+load_dotenv(Path(__file__).parent / ".env")
 
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
@@ -19,7 +20,7 @@ from starlette.responses import FileResponse
 
 from contextlib import asynccontextmanager
 
-from app.api.v1.endpoints import auth, emails, predictions, history, translation
+from app.api.v1.endpoints import auth, emails, predictions, history, translation, stats
 from app.core.config import settings
 from app.db.session import init_db
 from app.services.scheduler_service import start_scheduler, stop_scheduler
@@ -41,7 +42,7 @@ async def lifespan(app: FastAPI):
 
 def create_app() -> FastAPI:
     """Application factory pattern for creating FastAPI app instances."""
-    
+
     app = FastAPI(
         lifespan=lifespan,
         title="Phishing Email Detection API",
@@ -97,11 +98,15 @@ def create_app() -> FastAPI:
                 "name": "Translation",
                 "description": "Translate email or text to English using Google AI Studio (Gemini), with automatic chunking for long content.",
             },
+            {
+                "name": "Statistics",
+                "description": "Aggregated statistics and analytics: overview, threat trends, top senders/domains, ML feature stats, VT link stats, suspicious segment breakdown, and email timeline.",
+            },
         ],
     )
-    
-    logger.info(f'Application starting in {settings.ENVIRONMENT} mode')
-    
+
+    logger.info(f"Application starting in {settings.ENVIRONMENT} mode")
+
     # Configure CORS: use explicit origins from config (wildcard "*" is invalid with allow_credentials=True and credentials: 'include')
     app.add_middleware(
         CORSMiddleware,
@@ -110,103 +115,109 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
-    
+
     # Configure session middleware
     app.add_middleware(
         SessionMiddleware,
         secret_key=settings.SECRET_KEY,
         max_age=86400,  # 24 hours
         same_site=settings.SESSION_COOKIE_SAMESITE,
-        https_only=settings.SESSION_COOKIE_SECURE
+        https_only=settings.SESSION_COOKIE_SECURE,
     )
-    
+
     # Request/Response logging middleware
     @app.middleware("http")
     async def logging_middleware(request: Request, call_next):
         """Log incoming requests and responses."""
         request_id = str(uuid.uuid4())
         start_time = time.time()
-        
+
         # Store request ID in state for use in routes
         request.state.request_id = request_id
-        
+
         # Safely get user_id from session if available
         user_id = None
         if "session" in request.scope:
-            user_id = request.session.get('user_id')
-        client_ip = request.client.host if request.client else 'unknown'
-        
+            user_id = request.session.get("user_id")
+        client_ip = request.client.host if request.client else "unknown"
+
         logger.info(
-            f'Request received: {request.method} {request.url.path} '
-            f'[request_id={request_id}] [user_id={user_id}] [ip={client_ip}]'
+            f"Request received: {request.method} {request.url.path} "
+            f"[request_id={request_id}] [user_id={user_id}] [ip={client_ip}]"
         )
-        
+
         try:
             response = await call_next(request)
             response_time = (time.time() - start_time) * 1000  # Convert to milliseconds
-            
+
             # Safely get user_id from session if available
             user_id = None
             if "session" in request.scope:
-                user_id = request.session.get('user_id')
-            
+                user_id = request.session.get("user_id")
+
             logger.info(
-                f'Response sent: {request.method} {request.url.path} '
-                f'Status: {response.status_code} Time: {response_time:.2f}ms '
-                f'[request_id={request_id}] [user_id={user_id}]'
+                f"Response sent: {request.method} {request.url.path} "
+                f"Status: {response.status_code} Time: {response_time:.2f}ms "
+                f"[request_id={request_id}] [user_id={user_id}]"
             )
-            
+
             return response
         except Exception as e:
             response_time = (time.time() - start_time) * 1000
             logger.error(
-                f'Request error: {request.method} {request.url.path} '
-                f'Error: {str(e)} Time: {response_time:.2f}ms '
-                f'[request_id={request_id}]',
-                exc_info=True
+                f"Request error: {request.method} {request.url.path} "
+                f"Error: {str(e)} Time: {response_time:.2f}ms "
+                f"[request_id={request_id}]",
+                exc_info=True,
             )
             raise
-    
+
     # Initialize database
-    logger.info('Initializing database')
+    logger.info("Initializing database")
     try:
         init_db()
-        logger.info('Database initialized')
+        logger.info("Database initialized")
     except Exception as e:
-        logger.error(f'Database initialization failed: {str(e)}', exc_info=True)
+        logger.error(f"Database initialization failed: {str(e)}", exc_info=True)
         raise
-    
+
     # Register API routers
     app.include_router(auth.router, prefix="/api/v1", tags=["Authentication"])
     app.include_router(emails.router, prefix="/api/v1", tags=["Emails"])
     app.include_router(predictions.router, prefix="/api/v1", tags=["Predictions"])
     app.include_router(history.router, prefix="/api/v1", tags=["History"])
     app.include_router(translation.router, prefix="/api/v1", tags=["Translation"])
-    
-    logger.info('API routers registered')
-    
+    app.include_router(stats.router, prefix="/api/v1", tags=["Statistics"])
+
+    logger.info("API routers registered")
+
     # Serve frontend static files (only for non-API routes)
-    frontend_path = Path(__file__).parent.parent / 'frontend'
-    
+    frontend_path = Path(__file__).parent.parent / "frontend"
+
     @app.get("/", include_in_schema=False)
     async def serve_frontend_root():
         """Serve frontend index.html."""
-        index_path = frontend_path / 'index.html'
+        index_path = frontend_path / "index.html"
         if index_path.exists():
             return FileResponse(str(index_path))
         return JSONResponse(content={"error": "Frontend not found"}, status_code=404)
-    
+
     # Serve frontend static files (CSS, JS, etc.)
     if frontend_path.exists():
+
         @app.get("/{path:path}", include_in_schema=False)
         async def serve_frontend(path: str):
             """Serve frontend static files (fallback for SPA routing)."""
             # Don't serve API routes or docs
-            if (path.startswith("api/") or path.startswith("docs") or 
-                path.startswith("openapi.json") or path.startswith("redoc") or
-                path.startswith("static/")):
+            if (
+                path.startswith("api/")
+                or path.startswith("docs")
+                or path.startswith("openapi.json")
+                or path.startswith("redoc")
+                or path.startswith("static/")
+            ):
                 return JSONResponse(content={"error": "Not found"}, status_code=404)
-            
+
             # Try to serve the requested file
             file_path = frontend_path / path
             if file_path.exists() and file_path.is_file():
@@ -217,33 +228,33 @@ def create_app() -> FastAPI:
                 except ValueError:
                     # Path outside frontend directory - security issue
                     return JSONResponse(content={"error": "Not found"}, status_code=404)
-            
+
             # Fallback to index.html for SPA routing
-            index_path = frontend_path / 'index.html'
+            index_path = frontend_path / "index.html"
             if index_path.exists():
                 return FileResponse(str(index_path))
             return JSONResponse(content={"error": "Not found"}, status_code=404)
-    
+
     # Error handlers
     @app.exception_handler(404)
     async def not_found_handler(request: Request, exc):
         """Handle 404 errors."""
-        request_id = getattr(request.state, 'request_id', 'unknown')
-        logger.warning(f'404 Not Found: {request.url.path} [request_id={request_id}]')
+        request_id = getattr(request.state, "request_id", "unknown")
+        logger.warning(f"404 Not Found: {request.url.path} [request_id={request_id}]")
         return not_found_response()
-    
+
     @app.exception_handler(500)
     async def server_error_handler(request: Request, exc):
         """Handle 500 errors."""
-        request_id = getattr(request.state, 'request_id', 'unknown')
+        request_id = getattr(request.state, "request_id", "unknown")
         logger.error(
-            f'500 Internal Server Error: {request.url.path} '
-            f'[request_id={request_id}] Error: {str(exc)}',
-            exc_info=True
+            f"500 Internal Server Error: {request.url.path} "
+            f"[request_id={request_id}] Error: {str(exc)}",
+            exc_info=True,
         )
         return server_error_response()
-    
-    logger.info('Application initialization complete')
+
+    logger.info("Application initialization complete")
     return app
 
 

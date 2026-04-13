@@ -31,7 +31,7 @@ class AuthManager {
         const wasAuthenticated = this.isAuthenticated;
         this.isAuthenticated = false;
         this.user = null;
-        
+
         // Notify if state changed
         if (wasAuthenticated) {
             this._notifyAuthStateChange();
@@ -42,14 +42,14 @@ class AuthManager {
         try {
             const response = await api.checkAuthStatus();
             const previousAuthState = this.isAuthenticated;
-            
+
             if (response.success && response.data.authenticated) {
                 this.isAuthenticated = true;
                 this.user = {
                     id: response.data.user_id,
                     email: response.data.user_email
                 };
-                
+
                 // Notify if state changed
                 if (previousAuthState !== this.isAuthenticated) {
                     this._notifyAuthStateChange();
@@ -62,37 +62,33 @@ class AuthManager {
             }
         } catch (error) {
             console.error('Auth check failed:', error);
-            
-            // If it's an authentication error, clear state
-            if (error.isAuthError || error.type === 'AUTH_ERROR') {
-                this.clearAuthState();
-            } else {
-                // For other errors, just clear state to be safe
-                this.clearAuthState();
-            }
+            this.clearAuthState();
             return false;
         }
     }
 
-    async connectGmail() {
+    /**
+     * Sign in using email + password (direct call to mail API — no OAuth redirect).
+     */
+    async connect(email, password, label = 'INBOX') {
         try {
-            const response = await api.connectGmail();
-            if (response.success && response.data.authorization_url) {
-                // Redirect to OAuth2 authorization page
-                window.location.href = response.data.authorization_url;
+            const response = await api.connectMail(email, password, label);
+            if (response.success) {
+                // Refresh auth state from server
+                await this.checkStatus();
+                return true;
             } else {
-                throw new Error('Failed to get authorization URL. Please try again.');
+                throw new Error(response.message || 'Sign in failed. Please check your credentials.');
             }
         } catch (error) {
-            console.error('Gmail connection failed:', error);
-            
-            // Provide user-friendly error message
+            console.error('Mail connection failed:', error);
+
             if (error.type === 'NETWORK_ERROR') {
-                throw new Error('Unable to connect to server. Please check your internet connection and try again.');
+                throw new Error('Unable to connect to server. Please check your internet connection.');
             } else if (error.type === 'AUTH_ERROR') {
-                throw new Error('Authentication failed. Please try again.');
+                throw new Error('Invalid email or password. Please try again.');
             } else {
-                throw new Error(error.message || 'Failed to connect Gmail. Please try again.');
+                throw new Error(error.message || 'Sign in failed. Please try again.');
             }
         }
     }
@@ -107,11 +103,10 @@ class AuthManager {
             return false;
         } catch (error) {
             console.error('Disconnect failed:', error);
-            
+
             // Even if disconnect fails on server, clear local state
             this.clearAuthState();
-            
-            // Provide user-friendly error message
+
             if (error.type === 'NETWORK_ERROR') {
                 throw new Error('Unable to disconnect. Please check your internet connection.');
             } else {

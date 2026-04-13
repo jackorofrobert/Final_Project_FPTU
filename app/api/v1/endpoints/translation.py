@@ -1,6 +1,7 @@
 """
 Translation endpoints (English via Google AI Studio / Gemini).
 """
+
 import time
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -9,7 +10,11 @@ from app.core.dependencies import get_current_user_dependency
 from app.models import Email, TranslationLog
 from app.schemas.translation import TranslateTextRequest
 from app.services.translation_service import translate_to_english
-from app.utils.api_response import success_response, error_response, unauthorized_response
+from app.utils.api_response import (
+    success_response,
+    error_response,
+    unauthorized_response,
+)
 from app.utils.logger import get_logger
 
 router = APIRouter(prefix="/translate")
@@ -38,7 +43,9 @@ async def translation_status(
             e,
             exc_info=True,
         )
-        return error_response(error=str(e), message="Error loading translation stats", status_code=500)
+        return error_response(
+            error=str(e), message="Error loading translation stats", status_code=500
+        )
 
 
 @router.get(
@@ -65,7 +72,9 @@ async def translation_history(
             e,
             exc_info=True,
         )
-        return error_response(error=str(e), message="Error loading translation history", status_code=500)
+        return error_response(
+            error=str(e), message="Error loading translation history", status_code=500
+        )
 
 
 @router.post(
@@ -96,6 +105,7 @@ async def translate_text_to_english(
             model=str(result.get("model") or ""),
             duration_ms=duration_ms,
             urls_preserved=int(result.get("urls_preserved_count") or 0),
+            translated_text=translated,
         )
         result["duration_ms"] = duration_ms
         return success_response(
@@ -185,6 +195,7 @@ async def translate_email_to_english(
             model=str(result.get("model") or ""),
             duration_ms=duration_ms,
             urls_preserved=int(result.get("urls_preserved_count") or 0),
+            translated_text=translated,
         )
         result["email_id"] = email_id
         result["duration_ms"] = duration_ms
@@ -192,7 +203,11 @@ async def translate_email_to_english(
     except ValueError as e:
         duration_ms = int((time.monotonic() - t0) * 1000)
         email = Email.get_by_id(email_id)
-        sc = len((email or {}).get("body") or "") if email and email.get("user_id") == user_id else 0
+        sc = (
+            len((email or {}).get("body") or "")
+            if email and email.get("user_id") == user_id
+            else 0
+        )
         TranslationLog.create(
             user_id,
             "email",
@@ -217,7 +232,11 @@ async def translate_email_to_english(
     except Exception as e:
         duration_ms = int((time.monotonic() - t0) * 1000)
         email = Email.get_by_id(email_id)
-        sc = len((email or {}).get("body") or "") if email and email.get("user_id") == user_id else 0
+        sc = (
+            len((email or {}).get("body") or "")
+            if email and email.get("user_id") == user_id
+            else 0
+        )
         TranslationLog.create(
             user_id,
             "email",
@@ -243,4 +262,40 @@ async def translate_email_to_english(
             error=str(e),
             message="Translation failed",
             status_code=500,
+        )
+
+
+@router.get(
+    "/email/{email_id}/latest",
+    summary="Get latest saved translation for an email",
+    description="Returns the most recent successful translation stored for the given email, or 404 if none exists.",
+    tags=["Translation"],
+)
+async def get_email_latest_translation(
+    request: Request,
+    email_id: int,
+    user_id: int = Depends(get_current_user_dependency),
+):
+    request_id = getattr(request.state, "request_id", "unknown")
+    try:
+        email = Email.get_by_id(email_id)
+        if not email or email.get("user_id") != user_id:
+            return unauthorized_response("Access denied")
+        record = TranslationLog.get_latest_for_email(email_id)
+        if not record:
+            from app.utils.api_response import not_found_response
+
+            return not_found_response("No saved translation found for this email")
+        return success_response(data=record)
+    except Exception as e:
+        logger.error(
+            "Get latest translation error [email_id=%s] [user_id=%s] [request_id=%s]: %s",
+            email_id,
+            user_id,
+            request_id,
+            e,
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error loading translation", status_code=500
         )

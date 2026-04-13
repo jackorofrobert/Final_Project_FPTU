@@ -3,34 +3,83 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Phishing Email Detection System</title>
+    <title>PhishGuard — Email Security</title>
     <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
-    <nav class="navbar">
-        <div class="container">
-            <a href="#" data-page="home" class="logo">Phishing Detector</a>
-            <div class="nav-links">
-                <a href="#" data-page="home">Home</a>
-                <a href="#" data-page="analyze">Analyze</a>
-                <button class="btn btn-sm" onclick="app.connectGmail()">Connect Gmail</button>
+
+    <!-- ─── Login Overlay ─────────────────────────────────────────────── -->
+    <div id="login-overlay" class="login-overlay">
+        <div class="login-card">
+            <div class="login-brand">
+                <div class="login-brand-icon">PG</div>
+                <h1 class="login-brand-name">PhishGuard</h1>
             </div>
+            <p class="login-subtitle">AI-powered phishing detection. Connect your mail account to begin scanning.</p>
+            <form id="login-form" onsubmit="app.handleLogin(event)">
+                <div class="form-group">
+                    <label for="login-email">Email Address</label>
+                    <input type="email" id="login-email" class="form-control"
+                           placeholder="you@example.com" required autocomplete="email">
+                </div>
+                <div class="form-group">
+                    <label for="login-password">Password</label>
+                    <input type="password" id="login-password" class="form-control"
+                           placeholder="••••••••" required autocomplete="current-password">
+                </div>
+                <div id="login-error" class="login-error" style="display:none"></div>
+                <button type="submit" id="login-btn" class="btn btn-primary btn-block">Sign In</button>
+            </form>
         </div>
-    </nav>
+    </div>
 
-    <main class="container">
-        <div id="messages" class="flash-messages"></div>
-        <div id="loading" style="display: none; padding: 1rem; text-align: center;">Loading...</div>
-        <div id="app-content">
-            <!-- Content will be loaded here by JavaScript -->
-        </div>
-    </main>
+    <!-- ─── App Shell (shown after login) ────────────────────────────── -->
+    <div id="app-shell" class="app-shell" style="display:none">
 
-    <footer>
-        <div class="container">
-            <p>&copy; 2024 Phishing Email Detection System</p>
-        </div>
-    </footer>
+        <!-- Sidebar -->
+        <aside id="sidebar" class="sidebar">
+            <div class="sidebar-brand">
+                <span class="sidebar-brand-icon">PG</span>
+                <span class="sidebar-brand-name">PhishGuard</span>
+            </div>
+            <nav class="sidebar-nav" id="sidebar-nav">
+                <!-- Populated by JS -->
+            </nav>
+            <div class="sidebar-footer" id="sidebar-footer">
+                <!-- Populated by JS -->
+            </div>
+        </aside>
+
+        <!-- Main area -->
+        <div class="main-wrapper">
+
+            <!-- Top bar -->
+            <header class="topbar">
+                <div class="topbar-left">
+                    <button class="topbar-menu-btn" onclick="app.toggleSidebar()" aria-label="Toggle sidebar">
+                        <span></span><span></span><span></span>
+                    </button>
+                </div>
+                <div class="topbar-center">
+                    <div id="loading" class="topbar-loading" style="display:none">
+                        <div class="loading-spinner"></div>
+                        <span id="loading-text">Loading...</span>
+                    </div>
+                </div>
+                <div class="topbar-right">
+                    <span id="fetch-status-time" class="fetch-status-badge"></span>
+                </div>
+            </header>
+
+            <!-- Flash messages -->
+            <div id="messages" class="flash-messages-container"></div>
+
+            <!-- Page content -->
+            <main id="app-content" class="main-content"></main>
+
+        </div><!-- /.main-wrapper -->
+
+    </div><!-- /#app-shell -->
 
     <script src="js/api.js"></script>
     <script src="js/auth.js"></script>
