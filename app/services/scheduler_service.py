@@ -45,11 +45,12 @@ def fetch_new_emails_for_all_users():
 
     for user in users:
         user_id = user["id"]
-        last_fetch = user.get("last_fetch_at")
 
         try:
+            # Fetch without a date filter — the DB UNIQUE(user_id, gmail_message_id)
+            # constraint deduplicates on insert, so re-fetching known emails is harmless.
             emails = MailApiService.fetch_emails(
-                user_id, max_results=MAX_RESULTS_PER_FETCH, after=last_fetch
+                user_id, max_results=MAX_RESULTS_PER_FETCH
             )
 
             stored_count = 0
@@ -80,7 +81,7 @@ def fetch_new_emails_for_all_users():
             )
             logger.info(
                 f"Scheduler: fetched {len(emails)} emails, {new_count} new "
-                f"[user_id={user_id}] [after={last_fetch}]"
+                f"[user_id={user_id}]"
             )
         except Exception as e:
             logger.error(

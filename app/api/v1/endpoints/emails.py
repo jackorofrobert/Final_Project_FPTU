@@ -98,14 +98,14 @@ async def fetch(
         max_results = min(fetch_request.max_results, 500)  # Cap at 500
 
         user = User.get_by_id(user_id)
-        last_fetch = user.get("last_fetch_at") if user else None
         logger.info(
-            f"Email fetch requested [user_id={user_id}] [max_results={max_results}] [after={last_fetch}] [request_id={request_id}]"
+            f"Email fetch requested [user_id={user_id}] [max_results={max_results}] [request_id={request_id}]"
         )
 
-        emails = MailApiService.fetch_emails(
-            user_id, max_results=max_results, after=last_fetch
-        )
+        # Always fetch the latest N emails without a date filter.
+        # The DB UNIQUE(user_id, gmail_message_id) constraint deduplicates on insert,
+        # so re-fetching already-stored emails is harmless.
+        emails = MailApiService.fetch_emails(user_id, max_results=max_results)
 
         # Store emails in database
         stored_count = 0
