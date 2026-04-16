@@ -740,7 +740,7 @@ class App {
                     <td>${email.subject || "(No Subject)"}</td>
                     <td>${email.sender || ""}</td>
                     <td>${email.received_at ? email.received_at.substring(0, 10) : ""}</td>
-                    <td>${this.renderPredictionBadge(email.prediction)}</td>
+                    <td>${this.renderPredictionBadge(email.prediction, email.vt_summary)}</td>
                     <td><button class="btn btn-sm btn-secondary" onclick="app.viewEmail(${email.id})">View</button></td>
                   </tr>
                 `).join("")}
@@ -2206,12 +2206,27 @@ class App {
     return '<span class="badge badge-secondary">Original</span>';
   }
 
-  renderPredictionBadge(prediction) {
+  renderPredictionBadge(prediction, vtSummary) {
     if (!prediction) return '<span class="badge badge-secondary">Not Analyzed</span>';
+
     const classification = prediction.classification || (prediction.prediction == 1 ? "PHISHING" : "LEGITIMATE");
-    const score = prediction.ensemble_score || prediction.probability;
+    const score = prediction.ensemble_score != null ? prediction.ensemble_score : prediction.probability;
     const badgeClass = classification === "PHISHING" ? "badge-danger" : classification === "SUSPICIOUS" ? "badge-warning" : "badge-success";
-    return `<span class="badge ${badgeClass}">${classification}</span> <small class="text-muted">${(score * 100).toFixed(1)}%</small>`;
+
+    const originalBadge = `<span class="badge ${badgeClass}">${classification} ${(score * 100).toFixed(1)}%</span>`;
+
+    // Compute VT-enhanced score only when VT data exists
+    if (vtSummary && vtSummary.total_checked > 0) {
+      const vtBoost = Math.min(0.30, (vtSummary.total_malicious * 0.15) + (vtSummary.total_suspicious * 0.05));
+      const vtScore = Math.min(1.0, score + vtBoost);
+      // Determine badge class for VT score (use phishing threshold ~0.5)
+      const vtClass = vtScore >= 0.7 ? "badge-danger" : vtScore >= 0.4 ? "badge-warning" : "badge-success";
+      const pendingNote = vtSummary.has_pending ? ' <span class="badge badge-warning" title="Some links still pending VT scan">~</span>' : "";
+      const vtBadge = `<span class="badge ${vtClass}" title="+VirusTotal boost">+VT ${(vtScore * 100).toFixed(1)}%</span>${pendingNote}`;
+      return `${originalBadge} ${vtBadge}`;
+    }
+
+    return originalBadge;
   }
 
   escapeHtml(text) {

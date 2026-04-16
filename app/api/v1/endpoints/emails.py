@@ -231,13 +231,16 @@ async def list_emails(
 
         emails = EmailService.get_emails_by_user(user_id, limit=limit, offset=offset)
 
-        # Get latest prediction for each email
+        # Get latest *original* prediction for each email (exclude translated_body results)
         for email in emails:
-            email_with_pred = EmailService.get_email_with_prediction(email["id"])
-            if email_with_pred and email_with_pred.get("prediction"):
-                email["prediction"] = email_with_pred["prediction"]
-            else:
-                email["prediction"] = None
+            pred = Prediction.get_latest_original_by_email_id(email["id"])
+            email["prediction"] = pred  # None when not yet analyzed
+
+        # Batch-fetch VT summaries to avoid N+1 queries
+        email_ids = [e["id"] for e in emails]
+        vt_summaries = VTLinkCheck.get_summaries_for_emails(email_ids)
+        for email in emails:
+            email["vt_summary"] = vt_summaries.get(email["id"], None)
 
         logger.info(
             f"Email list retrieved: {len(emails)} emails [user_id={user_id}] [request_id={request_id}]"

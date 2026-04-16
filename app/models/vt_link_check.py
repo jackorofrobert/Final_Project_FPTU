@@ -125,6 +125,47 @@ class VTLinkCheck:
             return [dict(row) for row in cursor.fetchall()]
 
     @staticmethod
+    def get_summaries_for_emails(email_ids: list[int]) -> dict[int, dict]:
+        """Batch-fetch VT summaries for multiple emails in a single query.
+
+        Returns a dict keyed by email_id:
+          {
+            email_id: {
+              "total_checked": int,
+              "total_malicious": int,
+              "total_suspicious": int,
+              "has_pending": bool,
+            }
+          }
+        Only email IDs that have at least one VT record are included.
+        """
+        if not email_ids:
+            return {}
+        placeholders = ",".join("?" * len(email_ids))
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                f"""SELECT email_id,
+                           COUNT(*) AS total_checked,
+                           SUM(malicious) AS total_malicious,
+                           SUM(suspicious) AS total_suspicious,
+                           SUM(CASE WHEN status = 'pending_scan' THEN 1 ELSE 0 END) AS pending_count
+                    FROM vt_link_checks
+                    WHERE email_id IN ({placeholders})
+                    GROUP BY email_id""",
+                email_ids,
+            )
+            result = {}
+            for row in cursor.fetchall():
+                result[row["email_id"]] = {
+                    "total_checked": row["total_checked"],
+                    "total_malicious": int(row["total_malicious"] or 0),
+                    "total_suspicious": int(row["total_suspicious"] or 0),
+                    "has_pending": row["pending_count"] > 0,
+                }
+            return result
+
+    @staticmethod
     def get_by_email_id(email_id: int, limit: int = 100, offset: int = 0) -> list[dict]:
         """Get VirusTotal link results for one email."""
         with get_db() as conn:
