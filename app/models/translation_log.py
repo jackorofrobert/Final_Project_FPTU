@@ -2,7 +2,7 @@
 TranslationLog model for AI translation analytics.
 """
 
-from app.utils.database import get_db
+from app.db.session import get_db
 
 
 class TranslationLog:

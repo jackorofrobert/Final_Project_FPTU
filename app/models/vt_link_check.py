@@ -4,7 +4,7 @@ Models for VirusTotal link checks and daily quota usage.
 
 from datetime import datetime
 
-from app.utils.database import get_db
+from app.db.session import get_db
 
 
 class VTLinkCheck:

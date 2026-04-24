@@ -3,7 +3,7 @@ Email model for database operations.
 """
 import sqlite3
 from datetime import datetime
-from app.utils.database import get_db
+from app.db.session import get_db
 
 class Email:
     """Email model representing the emails table."""

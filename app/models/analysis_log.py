@@ -1,7 +1,7 @@
 """
 AnalysisLog model for tracking auto-analysis events.
 """
-from app.utils.database import get_db
+from app.db.session import get_db
 
 
 class AnalysisLog:

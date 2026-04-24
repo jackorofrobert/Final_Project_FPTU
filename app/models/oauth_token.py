@@ -2,7 +2,7 @@
 OAuthToken model for database operations.
 """
 from datetime import datetime
-from app.utils.database import get_db
+from app.db.session import get_db
 
 class OAuthToken:
     """OAuthToken model representing the oauth_tokens table."""

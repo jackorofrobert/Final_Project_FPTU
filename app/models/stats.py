@@ -9,7 +9,7 @@ The "latest prediction per email" CTE pattern is used throughout:
 This gives one prediction row per email (the most recent analysis).
 """
 
-from app.utils.database import get_db
+from app.db.session import get_db
 
 
 # ---------------------------------------------------------------------------

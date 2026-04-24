@@ -1,7 +1,7 @@
 """
 FetchLog model for tracking email fetch events.
 """
-from app.utils.database import get_db
+from app.db.session import get_db
 
 
 class FetchLog:

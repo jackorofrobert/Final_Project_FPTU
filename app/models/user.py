@@ -3,7 +3,7 @@ User model for database operations.
 """
 
 from datetime import datetime, timezone
-from app.utils.database import get_db
+from app.db.session import get_db
 
 
 class User:

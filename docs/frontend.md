@@ -1,577 +1,729 @@
-# Frontend Documentation
+# Tài liệu Frontend — PhishGuard
 
-## Overview
+Tài liệu mô tả toàn bộ phần giao diện người dùng (client-side) của hệ thống phát hiện email lừa đảo PhishGuard. Frontend là Single Page Application (SPA) viết bằng vanilla JavaScript thuần, không sử dụng framework.
 
-The frontend is a single-page application (SPA) built with vanilla JavaScript, HTML5, and CSS3. It communicates with the FastAPI backend through REST API endpoints. The application provides a user-friendly interface for Gmail authentication, email fetching, phishing detection analysis, and viewing prediction history.
+---
 
-**Technology Stack**:
+## 1. Tổng quan
 
-- Vanilla JavaScript (ES6+)
-- HTML5
-- CSS3
-- No external frameworks or libraries
+| Thuộc tính | Giá trị |
+|------------|--------|
+| Kiến trúc | Single Page Application (SPA) |
+| Ngôn ngữ | HTML5, CSS3, JavaScript ES6+ |
+| Framework | Không (vanilla JS) |
+| Build tool | Không (file tĩnh, phục vụ trực tiếp) |
+| Giao tiếp backend | REST API qua `fetch` với cookie session |
+| API base URL | `http://localhost:5000/api/v1` |
+| Routing | Client-side hash routing (`#stats`, `#emails`, …) |
 
-**File Structure**:
+Toàn bộ UI được quản lý bởi một lớp `App` duy nhất trong [app.js](../frontend/js/app.js), một lớp phụ `ApiClient` trong [api.js](../frontend/js/api.js) đảm nhận gọi HTTP, và `AuthManager` trong [auth.js](../frontend/js/auth.js) quản lý trạng thái đăng nhập.
+
+---
+
+## 2. Cấu trúc thư mục
 
 ```
 frontend/
-├── index.html          # Main HTML file
+├── index.html          # Shell HTML duy nhất của SPA
 ├── css/
-│   └── style.css       # Application styles
+│   └── style.css       # Design system (1383 dòng, pure CSS)
 └── js/
-    ├── api.js          # API client module
-    ├── auth.js         # Authentication manager
-    └── app.js          # Main application logic
+    ├── api.js          # ApiClient — wrapper gọi REST API
+    ├── auth.js         # AuthManager — quản lý phiên đăng nhập
+    └── app.js          # App — logic chính, render UI (~3600 dòng)
 ```
 
-## Architecture
+Ngoài ra dự án còn thư mục [app/views/](../app/views/) và [app/static/](../app/static/) chứa các template Flask/Jinja kế thừa (legacy). SPA hiện tại không sử dụng các template này; chúng được giữ cho mục đích tham khảo và không ảnh hưởng luồng chính.
 
-### Module Structure
+---
 
-The frontend is organized into three main JavaScript modules:
+## 3. File `index.html`
 
-1. **`api.js`** - API Client
-   - Handles all HTTP requests to the backend
-   - Provides error handling and response parsing
-   - Manages authentication state in requests
+File HTML duy nhất đóng vai trò "shell" cho SPA. Khi tải trang, nội dung động được JavaScript chèn vào các vùng `#login-overlay` hoặc `#app-content`.
 
-2. **`auth.js`** - Authentication Manager
-   - Manages user authentication state
-   - Handles OAuth2 flow initiation
-   - Provides authentication status checking
+**Các khối chính:**
 
-3. **`app.js`** - Main Application
-   - Manages routing and page navigation
-   - Renders UI components
-   - Handles user interactions
-   - Coordinates between API and Auth modules
+- `<div id="login-overlay">` — Màn hình đăng nhập (email + password + label), hiển thị khi chưa đăng nhập.
+- `<div id="app-shell">` — Khung ứng dụng gồm:
+  - `<aside id="sidebar">` — Thanh điều hướng bên trái, hiển thị logo, menu, thông tin người dùng và nút đăng xuất.
+  - `<header class="topbar">` — Thanh trên cùng: trạng thái tải dữ liệu, thời điểm đồng bộ cuối, nút bật/tắt sidebar trên mobile.
+  - `<main id="app-content">` — Vùng render nội dung từng trang.
 
-### Application Flow
+**Điểm vào sự kiện** (gắn trực tiếp vào HTML):
 
-```
-User Action → App.js → API.js → Backend API
-                ↓
-            Auth.js (for auth checks)
-                ↓
-            UI Update
+```html
+<form onsubmit="app.handleLogin(event)">
+<button onclick="app.toggleSidebar()">
 ```
 
-## Pages and Components
+Đối tượng `app` là một instance toàn cục của lớp `App` được khởi tạo ở cuối `app.js`.
 
-### 1. Home Page
+---
 
-**Route**: `#home` (default)
+## 4. File `css/style.css`
 
-**Description**: Landing page with feature overview and quick actions.
+Design system Pure CSS gồm 1383 dòng, không phụ thuộc framework ngoài (không Tailwind, không Bootstrap).
 
-**Features**:
+### 4.1 Biến CSS chính
 
-- Hero section with application title
-- Feature cards showing main capabilities:
-  - Connect Gmail
-  - Fetch Emails
-  - Analyze Email
-  - View History
-- Authentication status display
-- Quick action buttons
+| Biến | Giá trị | Mô tả |
+|------|---------|-------|
+| `--primary` | `#6366f1` | Màu thương hiệu (indigo) |
+| `--danger` | đỏ | Trạng thái phishing / nguy hiểm |
+| `--warning` | vàng | Trạng thái suspicious |
+| `--success` | xanh lá | Trạng thái legitimate |
+| `--info` | xanh dương | Trạng thái trung tính |
+| `--sidebar-bg` | `#1a1f2e` | Nền sidebar (dark theme) |
 
-**Code Location**: `app.js` → `renderHome()`
+### 4.2 Các nhóm component
 
-### 2. Email List Page
+- **Layout:** Sidebar cố định + main content; responsive qua breakpoint 900px.
+- **Cards, badges, buttons, alerts:** Thành phần UI chung cho toàn bộ trang.
+- **Bảng dữ liệu:** Dùng cho danh sách email, lịch sử, VT results.
+- **Biểu đồ:** Bar chart CSS-only (thanh chiều rộng theo tỉ lệ) cho top senders/domains, histogram phân bố xác suất, trend 14/30 ngày.
+- **Animation:** Spinner loading, slide-down cho flash message, transition progress bar.
+- **Responsive:** Grid 2 cột trên desktop, tự động thu về 1 cột trên mobile; sidebar chuyển sang overlay.
 
-**Route**: `#emails`
+---
 
-**Description**: Displays a list of emails fetched from Gmail.
+## 5. File `js/api.js` — Lớp `ApiClient`
 
-**Features**:
+Wrapper quản lý toàn bộ yêu cầu HTTP đến backend. Mọi request đều gửi với `credentials: "include"` để trình duyệt đính kèm cookie session.
 
-- Table view of emails with columns:
-  - Subject
-  - Sender
-  - Date
-  - Prediction status (Phishing/Benign/Not Analyzed)
-  - Actions (View button)
-- Pagination support
-- "Fetch Emails" button if no emails found
-- Authentication required
+### 5.1 Khởi tạo
 
-**Code Location**: `app.js` → `renderEmails()`
-
-### 3. Email Management Page
-
-**Route**: `#manage`
-
-**Description**: Advanced email management with bulk operations and analytics.
-
-**Features**:
-
-- Email list with checkboxes for selection
-- Select all / Clear selection
-- Bulk action bar (shown when emails are selected):
-  - Analyze Selected button
-  - Selected count display
-- Global actions:
-  - Analyze All Emails button
-- Analytics Dashboard (shown when emails are selected):
-  - Total selected count
-  - Phishing count and percentage
-  - Benign count and percentage
-  - Not analyzed count
-  - Average confidence score
-  - Confidence range
-  - Visual breakdown bar (Phishing vs Benign)
-- Individual email actions (View button)
-
-**Code Location**: `app.js` → `renderEmailManagement()`
-
-### 4. Analyze Page
-
-**Route**: `#analyze`
-
-**Description**: Manual email analysis interface.
-
-**Features**:
-
-- Text area for email content input
-- Analyze button
-- Results display area showing:
-  - Prediction (Phishing/Suspicious/Legitimate) with color-coded alert
-  - Classification level, Model Probability, Ensemble Score, Threshold
-  - **Detailed Formula Breakdown Table:**
-    - 🤖 Model Probability: raw score × 70% = contribution
-    - 🚨 Urgent Keywords: raw score × 12% = contribution
-    - 🔗 Links Risk: raw score × 10.5% = contribution + per-link sub-table
-    - 🌐 Sender Risk: raw score × 7.5% = contribution + TRUSTED/SUSPICIOUS badge
-    - 🎯 Ensemble Score tổng kết
-    - Formula text (monospace)
-  - Visual indicators (badges for domain type, link type)
-
-**Code Location**: `app.js` → `renderAnalyze()`, `handleAnalyze()`
-
-### 5. History Page
-
-**Route**: `#history`
-
-**Description**: Displays prediction history for authenticated user.
-
-**Features**:
-
-- Table view of predictions with columns:
-  - Email Subject
-  - Sender
-  - Prediction (Phishing/Benign)
-  - Confidence percentage
-  - Date
-  - Actions (View Email button)
-- Pagination support
-- Authentication required
-
-**Code Location**: `app.js` → `renderHistory()`
-
-### 6. Email Detail View
-
-**Route**: Modal/Overlay (not a separate route)
-
-**Description**: Detailed view of a single email.
-
-**Features**:
-
-- Email metadata (subject, sender, recipient, date)
-- Full email body content
-- Prediction results (if analyzed):
-  - Prediction label
-  - Confidence score
-  - Model version
-  - Analysis timestamp
-- Action buttons:
-  - Analyze Email (if not analyzed)
-  - View Predictions (if analyzed)
-- Close button
-
-**Code Location**: `app.js` → `viewEmail()`
-
-## JavaScript Modules
-
-### API Client (`api.js`)
-
-**Class**: `ApiClient`
-
-**Purpose**: Centralized API communication layer.
-
-**Key Methods**:
-
-- `request(endpoint, options)` - Generic HTTP request handler
-- `get(endpoint, options)` - GET request
-- `post(endpoint, data, options)` - POST request
-- `checkAuthStatus()` - Check authentication status
-- `connectGmail()` - Initiate OAuth2 flow
-- `disconnectGmail()` - Disconnect Gmail account
-- `fetchEmails(maxResults)` - Fetch emails from Gmail
-- `getEmails(limit, offset)` - Get stored emails list
-- `getEmail(emailId)` - Get email details
-- `getEmailPredictions(emailId)` - Get email prediction history
-- `analyzeEmail(emailText)` - Analyze email text
-- `analyzeStoredEmail(emailId)` - Analyze stored email
-- `analyzeBulkEmails(emailIds)` - Bulk analyze emails
-- `getPredictionHistory(limit, offset)` - Get prediction history
-
-**Error Handling**:
-
-- Custom `ApiError` class with error types:
-  - `AUTH_ERROR` - Authentication failures
-  - `NETWORK_ERROR` - Network connectivity issues
-  - `API_ERROR` - Server errors
-  - `UNKNOWN_ERROR` - Unexpected errors
-- Automatic authentication status refresh on 401/403
-- User-friendly error messages
-
-**Configuration**:
-
-- Base URL: `http://localhost:5001/api/v1`
-- Credentials: `include` (for session cookies)
-- Content-Type: `application/json`
-
-### Authentication Manager (`auth.js`)
-
-**Class**: `AuthManager`
-
-**Purpose**: Manages user authentication state and OAuth2 flow.
-
-**Properties**:
-
-- `isAuthenticated` (boolean) - Current authentication status
-- `user` (object) - User information (id, email)
-- `onAuthStateChange` (function) - Callback for auth state changes
-
-**Key Methods**:
-
-- `checkStatus()` - Check current authentication status
-- `connectGmail()` - Initiate OAuth2 connection flow
-- `disconnect()` - Disconnect Gmail account
-- `getUser()` - Get current user information
-- `getIsAuthenticated()` - Get authentication status
-- `clearAuthState()` - Clear authentication state
-- `setOnAuthStateChange(callback)` - Set callback for auth state changes
-
-**OAuth2 Flow**:
-
-1. User clicks "Connect Gmail"
-2. `connectGmail()` called → API request to `/api/v1/auth/connect`
-3. Server returns authorization URL
-4. User redirected to Google OAuth2 consent screen
-5. User grants permissions
-6. Google redirects to `/api/v1/auth/callback`
-7. Server processes callback and sets session
-8. Frontend detects `#auth-success` hash
-9. Authentication status updated
-
-### Main Application (`app.js`)
-
-**Class**: `App`
-
-**Purpose**: Main application controller managing routing, UI rendering, and user interactions.
-
-**Properties**:
-
-- `currentPage` (string) - Current active page
-- `selectedEmails` (Set) - Selected email IDs for bulk operations
-- `emailManagementData` (array) - Cached email list data
-
-**Key Methods**:
-
-**Initialization**:
-
-- `init()` - Initialize application
-- `setupRouting()` - Set up client-side routing
-- `handleAuthCallback()` - Handle OAuth callback
-
-**Navigation**:
-
-- `navigate(page, pushState)` - Navigate to page
-- `loadPage(page)` - Load and render page
-- `updateNavigation()` - Update navigation UI
-
-**Page Rendering**:
-
-- `renderHome()` - Render home page
-- `renderEmails()` - Render email list page
-- `renderEmailManagement()` - Render email management page
-- `renderAnalyze()` - Render analyze page
-- `renderHistory()` - Render history page
-- `viewEmail(emailId)` - Show email detail view
-
-**Email Operations**:
-
-- `fetchEmails()` - Fetch emails from Gmail
-- `analyzeEmail(emailId)` - Analyze a single email
-- `analyzeSelectedEmails()` - Analyze selected emails (bulk)
-- `analyzeAllEmails()` - Analyze all emails
-
-**Email Management**:
-
-- `toggleEmailSelection(emailId, isSelected)` - Toggle email selection
-- `toggleSelectAll(selectAll)` - Select/deselect all emails
-- `clearSelection()` - Clear all selections
-- `updateBulkActionBar()` - Update bulk action bar visibility
-- `updateAnalyticsDashboard()` - Update analytics dashboard
-- `renderEmailList(emails)` - Render email list table
-
-**UI Utilities**:
-
-- `showLoading()` - Show loading indicator
-- `hideLoading()` - Hide loading indicator
-- `showSuccess(message)` - Show success message
-- `showError(message)` - Show error message
-- `getUserFriendlyErrorMessage(error, defaultMessage)` - Format error messages
-
-## User Flows
-
-### 1. Authentication Flow
-
-```
-1. User clicks "Connect Gmail" button
-2. App calls authManager.connectGmail()
-3. API returns authorization URL
-4. User redirected to Google OAuth2 consent screen
-5. User grants permissions
-6. Google redirects to /api/v1/auth/callback
-7. Server processes callback, sets session
-8. Frontend detects #auth-success hash
-9. Success message shown
-10. Authentication status updated
-11. UI updated to show authenticated state
+```javascript
+class ApiClient {
+    constructor() {
+        this.baseUrl = "http://localhost:5000/api/v1";
+    }
+    async request(path, options) { /* fetch + xử lý lỗi */ }
+}
 ```
 
-### 2. Email Fetching Flow
+Nếu response trả về HTTP 401/403, client tự động gọi `checkAuthStatus()` và kích hoạt màn hình đăng nhập. Lỗi được bọc trong lớp `ApiError` với các loại: `AUTH_ERROR`, `NETWORK_ERROR`, `API_ERROR`.
 
-```
-1. User clicks "Fetch Emails" button
-2. App calls api.fetchEmails(maxResults)
-3. Loading indicator shown
-4. API request to POST /api/v1/emails/fetch
-5. Server fetches emails from Gmail API
-6. Emails stored in database
-7. Response returned with email list
-8. UI updated with fetched emails
-9. Success message shown
+### 5.2 Các nhóm phương thức
+
+**Xác thực**
+```javascript
+checkAuthStatus()                   // GET  /auth/status
+connectMail(email, password, label) // POST /auth/connect
+disconnectGmail()                   // POST /auth/disconnect
 ```
 
-### 3. Email Analysis Flow
-
-**Manual Analysis**:
-
-```
-1. User navigates to Analyze page
-2. User enters email text in textarea
-3. User clicks "Analyze" button
-4. App calls api.analyzeEmail(emailText)
-5. API request to POST /api/v1/predictions/analyze
-6. Server processes email through ML model
-7. Prediction result returned
-8. Results displayed on page
+**Email**
+```javascript
+fetchEmails(maxResults)             // POST /emails/fetch  — kéo email mới từ server mail
+getEmails(limit, offset)            // GET  /emails/list
+getEmail(emailId)                   // GET  /emails/{id}
+getEmailPredictions(emailId)        // GET  /predictions/{email_id}/details
+getEmailVTResults(emailId, ...)     // GET  /emails/{id}/vt-links
 ```
 
-**Stored Email Analysis**:
-
-```
-1. User views email list
-2. User clicks "Analyze" on an email
-3. App calls api.analyzeStoredEmail(emailId)
-4. API request to POST /api/v1/predictions/analyze-email/{emailId}
-5. Server processes email through ML model
-6. Prediction saved to database
-7. UI updated with prediction result
-8. Success message shown
+**Phân tích & dự đoán**
+```javascript
+analyzeEmail(emailText)                              // POST /predictions/analyze
+analyzeStoredEmail(emailId)                          // POST /predictions/analyze-email/{id}
+analyzeStoredEmailTranslated(emailId, translatedText)// POST /predictions/analyze-translated/{id}
+analyzeBulkEmails(emailIds)                          // Gọi lần lượt cho từng email (có theo dõi tiến độ)
 ```
 
-**Bulk Analysis**:
-
-```
-1. User navigates to Email Management page
-2. User selects multiple emails (checkboxes)
-3. User clicks "Analyze Selected" button
-4. App calls api.analyzeBulkEmails(emailIds)
-5. For each email:
-   - API request to analyze endpoint
-   - Results collected
-6. Success/failure summary shown
-7. UI updated with all prediction results
-```
-
-### 4. History Viewing Flow
-
-```
-1. User navigates to History page
-2. App calls api.getPredictionHistory()
-3. API request to GET /api/v1/history/predictions
-4. Server returns prediction history
-5. History table rendered
-6. User can click "View Email" to see details
+**Thống kê**
+```javascript
+getStatsOverview()          // GET /stats/overview
+getStatsClassification()    // GET /stats/classification
+getStatsTopSenders()        // GET /stats/top-senders
+getStatsTopDomains()        // GET /stats/top-domains
+getStatsTrend(days)         // GET /stats/trend
+getStatsFeatures()          // GET /stats/features
+getStatsSegments()          // GET /stats/segments
+getStatsLinks(topN)         // GET /stats/links
+getStatsTimeline(days)      // GET /stats/timeline
+getStatsProbabilityDist()   // GET /stats/probability-dist
 ```
 
-## Routing
+**Lịch sử đồng bộ**
+```javascript
+getFetchStatus()      // Tóm tắt trạng thái fetch
+getFetchHistory()     // Danh sách log fetch
+getAnalysisStatus()   // Trạng thái analyze
+getAnalysisHistory()  // Log analyze
+getVTStatus()         // Trạng thái VirusTotal (quota còn lại, hạn mức)
+getVTHistory()        // Log quét VT
+runVTScanNow()        // Kích hoạt quét thủ công
+```
 
-The application uses client-side routing with URL hash fragments:
+**Dịch thuật (Gemini)**
+```javascript
+translateTextToEnglish(text)                 // POST /translate/text
+translateEmailBodyToEnglish(emailId)         // GET  /translate/{email_id}
+getTranslationStatus()                       // GET  /translate/status
+getTranslationHistory()                      // GET  /translate/history
+```
 
-- `#home` - Home page (default)
-- `#emails` - Email list page
-- `#manage` - Email management page
-- `#analyze` - Analyze page
-- `#history` - History page
-- `#auth-success` - OAuth success callback
-- `#auth-error=<message>` - OAuth error callback
+---
 
-**Routing Implementation**:
+## 6. File `js/auth.js` — Lớp `AuthManager`
 
-- Hash-based routing (no page reloads)
-- Browser history support (back/forward buttons)
-- Navigation via `data-page` attributes on links
-- Programmatic navigation via `app.navigate(page)`
+Singleton quản lý trạng thái đăng nhập, được expose thông qua `window.authManager`.
 
-## Styling
+```javascript
+class AuthManager {
+    isAuthenticated = false;
+    user = null;                  // { id, email }
+    onAuthStateChange = null;     // callback khi trạng thái thay đổi
 
-### CSS Architecture
+    async checkStatus()           // Gọi /auth/status khi khởi động
+    async connect(email, password, label)
+    async disconnect()
+    getUser()
+    getIsAuthenticated()
+}
+```
 
-The application uses a custom CSS file (`style.css`) with:
+Khi `checkStatus()` hoặc `connect()` trả về thành công, `AuthManager` cập nhật trạng thái rồi gọi callback để `App` ẩn login overlay và hiển thị shell.
 
-**Design System**:
+---
 
-- Color scheme: Dark blue navbar (#2c3e50), light gray background (#f5f5f5)
-- Typography: System font stack
-- Spacing: Consistent padding and margins
-- Responsive: Container-based layout with max-width
+## 7. File `js/app.js` — Lớp `App`
 
-**Component Styles**:
+Tập trung toàn bộ logic SPA. Khi `window.onload` chạy, nó instantiate `new App()` và gán vào biến toàn cục `app`.
 
-- Navigation bar
-- Buttons (primary, secondary, small variants)
-- Forms and inputs
-- Tables (email list, history)
-- Cards (feature cards, analytics cards)
-- Badges (status indicators)
-- Flash messages (success, error, warning, info)
-- Modals/Overlays
+### 7.1 State chính
 
-**Utility Classes**:
+```javascript
+class App {
+    currentPage = "stats";          // Trang đang hiển thị
+    selectedEmails = new Set();     // Email đang được tick trong bulk analyze
+    emailManagementData = [];       // Cache email cho trang Management
+    pollInterval = null;            // ID setInterval cho polling 30s
+}
+```
 
-- `.container` - Content container
-- `.btn` - Button base class
-- `.badge` - Status badge
-- `.text-muted` - Muted text
-- `.selected` - Selected row styling
+### 7.2 Hệ thống routing
 
-## Error Handling
+Sử dụng hash routing để không cần server-side routing:
 
-### Error Types
+```javascript
+setupRouting()            // Lắng nghe window.addEventListener("hashchange")
+navigate(page)            // Thay đổi window.location.hash
+async loadPage(page)      // Dispatch → render<Page>()
+```
 
-1. **Authentication Errors**:
-   - Session expired
-   - Not authenticated
-   - OAuth flow failures
-   - Automatic redirect to home page
+Các giá trị hash được hỗ trợ: `#stats`, `#emails`, `#manage`, `#analyze`, `#history`, `#fetch-history`.
 
-2. **Network Errors**:
-   - Connection failures
-   - Timeout errors
-   - User-friendly messages displayed
+### 7.3 Các trang và phương thức render
 
-3. **API Errors**:
-   - Server errors (500)
-   - Validation errors (400, 422)
-   - Not found errors (404)
-   - Error messages displayed to user
+**`renderStats()` — Dashboard tổng quan**
 
-4. **User Errors**:
-   - Missing required fields
-   - Invalid input
-   - Inline validation messages
+Gọi song song toàn bộ `getStats*` và render:
+- 5 stat card: Total, Phishing, Suspicious, Legitimate, VT links.
+- Classification bar: tỉ lệ phishing vs benign.
+- Top senders, top domains (bar chart chiều ngang).
+- Xu hướng 14 ngày, timeline nhận email 30 ngày.
+- Phân tích feature: số link trung bình, tỉ lệ có đính kèm, tỉ lệ có keyword khẩn cấp.
+- VT link risk (malicious / suspicious / clean).
+- Top 5 đoạn văn bản đáng ngờ.
+- Histogram phân bố xác suất ML.
 
-### Error Display
+**`renderEmails()` — Danh sách email**
 
-- Flash messages at top of page
-- Color-coded (red for errors, green for success)
-- Auto-dismiss after timeout (optional)
-- Persistent until user dismisses
+Bảng gồm cột: Subject, Sender, Date, Prediction badge, action "View". Click vào "View" gọi `viewEmail(emailId)` để hiển thị chi tiết.
 
-## State Management
+**`renderAnalyze()` — Phân tích thủ công**
 
-### Application State
+Giao diện 2 panel:
+- Trái: dán nguyên văn email → nhấn "Analyze original".
+- Phải: hiển thị bản dịch tiếng Anh sau khi "Translate" → nhấn "Analyze translation".
 
-- **Authentication State**: Managed by `AuthManager`
-  - Stored in memory
-  - Persisted via session cookies (server-side)
-  - Checked on page load
+Sử dụng `translateTextToEnglish()` và `analyzeEmail()`.
 
-- **Page State**: Managed by `App`
-  - Current page stored in `currentPage`
-  - URL hash reflects current page
+**`renderHistory()` — Lịch sử dự đoán**
 
-- **Selection State**: Managed by `App`
-  - `selectedEmails` Set for bulk operations
-  - Persists during page session
-  - Cleared on page navigation
+Bảng liệt kê toàn bộ prediction kèm: tiêu đề, người gửi, prediction badge, nguồn input (`original` hoặc `translated_body`), độ tin cậy, ngày.
 
-- **Data State**: Managed by `App`
-  - `emailManagementData` cached for analytics
-  - Refreshed on page load
+**`renderEmailManagement()` — Quản lý và phân tích hàng loạt**
 
-## Integration with Backend
+- Checkbox chọn nhiều email, action bar "Analyze Selected".
+- Khi có email được chọn, hiển thị analytics tức thời: Total, % Phishing, độ tin cậy trung bình, dải min–max.
+- Progress bar khi gọi `analyzeBulkEmails()` tuần tự.
 
-### API Communication
+**`renderFetchHistory()` — Nhật ký đồng bộ**
 
-All frontend-backend communication happens through REST API:
+- Status card: tổng email, lần fetch cuối, số email chưa phân tích, quota VT còn lại.
+- Bảng fetch log (Auto / Manual).
+- Bảng analysis log.
+- Bảng VT scan log + bảng kết quả chi tiết URL (status, số detection).
+- Bảng translation log + thống kê (chunk sử dụng, tỉ lệ thành công).
 
-1. **Authentication**: Session-based via cookies
-   - Cookies set by server after OAuth callback
-   - Included automatically in requests (`credentials: 'include'`)
+### 7.4 Các hàm xử lý chính
 
-2. **Data Fetching**: GET requests
-   - Email list: `GET /api/v1/emails/list`
-   - Email details: `GET /api/v1/emails/{id}`
-   - Prediction history: `GET /api/v1/history/predictions`
+```javascript
+// Đăng nhập
+async handleLogin(event)          // onsubmit của form login
+showLoginOverlay(), hideLoginOverlay()
 
-3. **Data Submission**: POST requests
-   - OAuth initiation: `POST /api/v1/auth/connect`
-   - Email fetching: `POST /api/v1/emails/fetch`
-   - Email analysis: `POST /api/v1/predictions/analyze`
+// Sidebar
+updateSidebar()                   // Render menu + thông tin user
+toggleSidebar()
 
-4. **Error Handling**: Consistent error response format
-   - All errors return `{ success: false, message: "...", error: "..." }`
-   - HTTP status codes indicate error type
-   - Frontend displays user-friendly messages
+// Polling (mỗi 30 giây)
+startPolling(), stopPolling()
+async pollForNewEmails()          // Kiểm tra fetch status, cập nhật badge
 
-## Browser Compatibility
+// Thao tác email
+async viewEmail(emailId)
+async fetchEmails()
+async translateAnalyzeTextToEnglish()
 
-- Modern browsers (Chrome, Firefox, Safari, Edge)
-- ES6+ JavaScript features
-- Fetch API for HTTP requests
-- CSS Grid and Flexbox for layout
-- No polyfills required for modern browsers
+// Phân tích hàng loạt
+async analyzeAllEmails()
+async analyzeSelectedEmails()
 
-## Performance Considerations
+// UI helper
+showLoading(), hideLoading()
+showSuccess(msg), showError(msg)
+renderPredictionBadge(pred)       // Badge theo classification
+escapeHtml(str)                   // Chống XSS khi inject HTML
+```
 
-- Lazy loading of email details
-- Efficient DOM updates (only changed elements)
-- Caching of email list data for analytics
-- Minimal external dependencies (vanilla JS)
-- Optimized API calls (bulk operations where possible)
+---
 
-## Security
+## 8. Giao tiếp với backend
 
-- Session-based authentication (secure cookies)
-- No sensitive data stored in localStorage
-- OAuth2 flow handled securely
-- CORS configured on backend
-- Input validation on both frontend and backend
+### 8.1 Cơ chế xác thực
 
-## Future Enhancements
+- Dùng session cookie (không lưu token trong `localStorage`).
+- Mọi `fetch` gửi kèm `credentials: "include"` để trình duyệt tự đính kèm cookie.
+- Khi backend trả 401, `ApiClient` gọi `checkAuthStatus()` rồi `AuthManager` hiển thị lại login overlay.
 
-Potential improvements:
+### 8.2 Ví dụ request/response
 
-- Real-time updates (WebSocket)
-- Offline support (Service Workers)
-- Progressive Web App (PWA) features
-- Advanced filtering and search
-- Export functionality
-- Email preview pane
-- Dark mode theme
+**Đăng nhập**
+```http
+POST /api/v1/auth/connect
+Content-Type: application/json
+
+{ "email": "user@example.com", "password": "…", "label": "INBOX" }
+```
+
+**Lấy danh sách email**
+```http
+GET /api/v1/emails/list?limit=50&offset=0
+Cookie: session=…
+```
+
+**Phân tích thủ công**
+```http
+POST /api/v1/predictions/analyze
+Content-Type: application/json
+
+{ "email_text": "…" }
+```
+
+### 8.3 Luồng người dùng tiêu biểu
+
+```
+Mở trang → checkStatus()
+  │
+  ├── Chưa đăng nhập → showLoginOverlay() → handleLogin() → connect()
+  │
+  └── Đã đăng nhập → hideLoginOverlay() → loadPage("stats")
+        │
+        ├── Dashboard: renderStats() + polling 30 s
+        ├── Emails:    renderEmails() → viewEmail()
+        ├── Analyze:   renderAnalyze() → translate/analyze
+        ├── Manage:    renderEmailManagement() → bulk analyze
+        ├── History:   renderHistory()
+        └── Sync log:  renderFetchHistory()
+```
+
+---
+
+## 9. Bảo mật phía client
+
+- **Chống XSS:** Mọi giá trị do backend trả về (subject, sender, body, URL…) đều được đưa qua `escapeHtml()` trước khi inject vào HTML thông qua template literal.
+- **Không lưu credential:** Password chỉ tồn tại trong bộ nhớ form trong quá trình submit; không ghi vào `localStorage`/`sessionStorage`.
+- **Session-only:** Cookie session do backend kiểm soát (HttpOnly, SameSite=Lax), JavaScript không đọc được.
+
+---
+
+## 10. Các module UI và endpoint tương ứng
+
+| Module           | Mô tả                                         | Endpoint tiêu biểu                                           |
+|------------------|-----------------------------------------------|--------------------------------------------------------------|
+| Login            | Form email + password                         | `/auth/connect`, `/auth/status`, `/auth/disconnect`          |
+| Dashboard        | Stat card, xu hướng, biểu đồ                  | `/stats/*` (10 endpoint)                                     |
+| Emails List      | Bảng danh sách email                          | `/emails/list`                                               |
+| Email Detail     | Chi tiết + prediction + VT links              | `/emails/{id}`, `/predictions/{email_id}/details`            |
+| Analyze          | Dán text, dịch, phân tích                     | `/predictions/analyze`, `/translate/text`                    |
+| Management       | Bulk analyze                                  | `/emails/list`, `/predictions/analyze-email/{id}`            |
+| History          | Lịch sử dự đoán                               | `/history/predictions`                                       |
+| Sync Log         | Fetch, analyze, VT, translation log           | `/emails/fetch-history`, `/emails/analysis-history`, `/emails/vt-history`, `/translate/history` |
+
+---
+
+## 11. Chạy và phát triển
+
+Vì frontend là file tĩnh, có thể phục vụ bằng bất kỳ web server nào:
+
+```bash
+# Ví dụ: dùng Python
+cd frontend
+python -m http.server 5001
+# Sau đó mở http://localhost:5001
+```
+
+Yêu cầu backend phải đang chạy tại `http://localhost:5000` và origin `http://localhost:5001` phải nằm trong `CORS_ORIGINS` của backend.
+
+---
+
+## 12. Chi tiết triển khai
+
+Phần này tham chiếu trực tiếp đến mã nguồn trong [frontend/](../frontend/) và đi sâu vào các pattern quan trọng. Các sơ đồ tuần tự của từng luồng xem [SEQUENCE_DIAGRAMS.md](./SEQUENCE_DIAGRAMS.md).
+
+### 12.1 Khởi tạo và vòng đời trang
+
+Khi trình duyệt tải `index.html`, script được load theo thứ tự: `api.js` → `auth.js` → `app.js`. Ở cuối `app.js`:
+
+```javascript
+const api = new ApiClient();
+const authManager = new AuthManager(api);
+window.app = new App(api, authManager);
+
+window.addEventListener("DOMContentLoaded", () => {
+    window.app.init();
+});
+```
+
+`App.init()` thực hiện 4 bước:
+
+1. Gắn hash router (`window.addEventListener("hashchange", ...)`).
+2. Gọi `authManager.checkStatus()` — một lần duy nhất khi khởi động.
+3. Nếu đã đăng nhập: `hideLoginOverlay()` → `loadPage(currentPage)` → `startPolling()`.
+4. Nếu chưa: `showLoginOverlay()`, form login sẽ tự kích hoạt flow đăng nhập.
+
+### 12.2 `ApiClient.request()` — cốt lõi của mọi fetch
+
+Tất cả phương thức trong `ApiClient` đều quy về một hàm duy nhất:
+
+```javascript
+async request(path, { method = "GET", body = null, query = null } = {}) {
+    const url = new URL(this.baseUrl + path);
+    if (query) {
+        Object.entries(query).forEach(([k, v]) =>
+            v !== undefined && v !== null && url.searchParams.set(k, v)
+        );
+    }
+
+    const options = {
+        method,
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+    };
+    if (body) options.body = JSON.stringify(body);
+
+    let response;
+    try {
+        response = await fetch(url, options);
+    } catch (err) {
+        throw new ApiError("Network error", "NETWORK_ERROR", err);
+    }
+
+    if (response.status === 401 || response.status === 403) {
+        // Yêu cầu login lại
+        authManager.isAuthenticated = false;
+        authManager.onAuthStateChange?.(false);
+        throw new ApiError("Auth required", "AUTH_ERROR");
+    }
+
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        throw new ApiError(payload.detail || "API error", "API_ERROR", payload);
+    }
+    return payload;
+}
+```
+
+Lưu ý:
+- `credentials: "include"` gửi cookie session trên mọi domain backend đã được CORS allow.
+- Trên lỗi 401/403, lớp trên sẽ catch `ApiError` với `type === "AUTH_ERROR"` và trình diễn login overlay.
+- Lỗi JSON parse được nuốt để tránh throw khi backend trả body rỗng.
+
+### 12.3 Hash router
+
+SPA chia theo hash (`#stats`, `#emails`, …). `setupRouting()` đăng ký listener rồi gọi `loadPage` cho hash hiện tại:
+
+```javascript
+setupRouting() {
+    window.addEventListener("hashchange", () => this.loadPage(this.getCurrentHash()));
+    const initial = this.getCurrentHash() || "stats";
+    this.loadPage(initial);
+}
+
+getCurrentHash() {
+    return window.location.hash.replace(/^#/, "") || "stats";
+}
+
+async loadPage(page) {
+    this.currentPage = page;
+    this.updateSidebar();
+    this.showLoading();
+    try {
+        switch (page) {
+            case "stats":          await this.renderStats(); break;
+            case "emails":         await this.renderEmails(); break;
+            case "analyze":        await this.renderAnalyze(); break;
+            case "manage":         await this.renderEmailManagement(); break;
+            case "history":        await this.renderHistory(); break;
+            case "fetch-history":  await this.renderFetchHistory(); break;
+            default: this.renderStats();
+        }
+    } catch (err) {
+        this.showError(err.message);
+    } finally {
+        this.hideLoading();
+    }
+}
+```
+
+### 12.4 Polling email mới
+
+Sau khi đăng nhập, SPA bật interval 30 giây:
+
+```javascript
+startPolling() {
+    if (this.pollInterval) return;
+    this.pollInterval = setInterval(() => this.pollForNewEmails(), 30_000);
+}
+
+async pollForNewEmails() {
+    try {
+        const status = await api.getFetchStatus();
+        if (status.unanalyzed > this._lastUnanalyzed) {
+            this.showToast(`${status.unanalyzed - this._lastUnanalyzed} email mới`);
+            if (this.currentPage === "stats") this.renderStats();
+            if (this.currentPage === "emails") this.renderEmails();
+        }
+        this._lastUnanalyzed = status.unanalyzed;
+    } catch (_) {
+        // Không ảnh hưởng UI chính, chỉ log silent
+    }
+}
+
+stopPolling() {
+    clearInterval(this.pollInterval);
+    this.pollInterval = null;
+}
+```
+
+### 12.5 Chống XSS
+
+Backend trả nội dung email thô; SPA dùng `escapeHtml()` trước mọi `innerHTML`:
+
+```javascript
+escapeHtml(str) {
+    if (str == null) return "";
+    return String(str)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+}
+
+renderEmailRow(email) {
+    return `
+        <tr>
+            <td>${this.escapeHtml(email.subject)}</td>
+            <td>${this.escapeHtml(email.sender)}</td>
+            <td>${this.formatDate(email.received_at)}</td>
+            <td>${this.renderPredictionBadge(email.prediction)}</td>
+        </tr>`;
+}
+```
+
+**Hộp thoại body email** là trường hợp đặc biệt — backend trả HTML. SPA chèn vào một `<iframe srcdoc>` cách ly với DOM chính để vô hiệu script:
+
+```javascript
+`<iframe sandbox="" srcdoc="${this.escapeHtml(body)}"></iframe>`
+```
+
+### 12.6 Prediction badge
+
+```javascript
+renderPredictionBadge(pred) {
+    if (!pred) return `<span class="badge badge-muted">Chưa phân tích</span>`;
+    const map = {
+        PHISHING:   ["danger",  "Phishing"],
+        SUSPICIOUS: ["warning", "Nghi ngờ"],
+        LEGITIMATE: ["success", "An toàn"],
+    };
+    const [cls, label] = map[pred.classification] || ["muted", pred.classification];
+    const score = (pred.ensemble_score * 100).toFixed(1);
+    return `<span class="badge badge-${cls}">${label} · ${score}%</span>`;
+}
+```
+
+### 12.7 Bar chart CSS-only
+
+Thay vì thư viện biểu đồ, các bar chart ngang tận dụng `width: calc(... * 100%)`:
+
+```javascript
+renderBarList(items, maxKey = "count") {
+    const max = Math.max(...items.map(it => it[maxKey])) || 1;
+    return items.map(it => {
+        const pct = (it[maxKey] / max) * 100;
+        return `
+            <div class="bar-row">
+                <span class="bar-label">${this.escapeHtml(it.label)}</span>
+                <div class="bar-track">
+                    <div class="bar-fill" style="width:${pct.toFixed(1)}%"></div>
+                </div>
+                <span class="bar-value">${it[maxKey]}</span>
+            </div>`;
+    }).join("");
+}
+```
+
+### 12.8 Bulk analyze — tracking tiến độ
+
+```javascript
+async analyzeSelectedEmails() {
+    const ids = [...this.selectedEmails];
+    this.showProgress(0, ids.length);
+    const results = [];
+    for (let i = 0; i < ids.length; i++) {
+        try {
+            const r = await api.analyzeStoredEmail(ids[i]);
+            results.push(r);
+        } catch (err) {
+            results.push({ error: err.message, email_id: ids[i] });
+        }
+        this.showProgress(i + 1, ids.length);
+    }
+    this.renderBulkSummary(results);
+}
+```
+
+Frontend gọi **tuần tự** thay vì `Promise.all` để:
+- Hiển thị progress bar chính xác.
+- Tránh quá tải model ML (load lazy 1 lần nhưng predict_proba vẫn tốn CPU).
+- Giới hạn rate VT / Gemini khi backend tự trigger thêm các hành động phụ.
+
+### 12.9 Form login
+
+```javascript
+async handleLogin(event) {
+    event.preventDefault();
+    const form = event.target;
+    const email = form.email.value.trim();
+    const password = form.password.value;
+    const label = form.label.value || "INBOX";
+
+    this.showLoading("Đang đăng nhập...");
+    try {
+        await authManager.connect(email, password, label);
+        this.hideLoginOverlay();
+        this.startPolling();
+        await this.loadPage("stats");
+    } catch (err) {
+        this.showError(err.message || "Sai tài khoản");
+    } finally {
+        this.hideLoading();
+        form.password.value = "";    // Không giữ password trong DOM
+    }
+}
+```
+
+### 12.10 Ví dụ JSON request/response tiêu biểu
+
+**`POST /api/v1/predictions/analyze` — request**
+```json
+{
+  "email_text": "Dear customer, your account will be suspended...",
+  "subject": "Urgent: Verify your identity",
+  "has_attachment": 0,
+  "links_count": 3,
+  "sender_domain": "paypa1.com",
+  "urgent_keywords": 1
+}
+```
+
+**Response**
+```json
+{
+  "prediction": 1,
+  "classification": "PHISHING",
+  "probability": 0.912,
+  "ensemble_score": 0.874,
+  "threshold": 0.6,
+  "suspicious_margin": 0.2,
+  "is_phishing": true,
+  "features": {
+    "links_count": 3,
+    "has_attachment": 0,
+    "urgent_keywords": 1,
+    "sender_domain": "paypa1.com",
+    "sender_risk": "SUSPICIOUS"
+  },
+  "formula_details": {
+    "model_component":   0.502,
+    "urgent_component":  0.200,
+    "links_component":   0.105,
+    "domain_component":  0.067
+  },
+  "suspicious_segments": [
+    {
+      "text": "Your account will be suspended within 24 hours...",
+      "score": 87.5,
+      "severity": "HIGH",
+      "reasons": ["urgent_keyword", "threat_language"]
+    }
+  ]
+}
+```
+
+**`GET /api/v1/stats/overview` — response**
+```json
+{
+  "total_emails": 342,
+  "analyzed": 340,
+  "unanalyzed": 2,
+  "phishing_count": 23,
+  "suspicious_count": 41,
+  "legitimate_count": 276,
+  "threat_rate": 0.188,
+  "vt_link_stats": { "malicious": 5, "suspicious": 12, "clean": 188 }
+}
+```
+
+### 12.11 Xử lý lỗi UI nhất quán
+
+`showError()` hiển thị flash message đỏ trong topbar:
+
+```javascript
+showError(message) {
+    const el = document.getElementById("flash");
+    el.textContent = message;
+    el.className = "flash flash-danger show";
+    clearTimeout(this._flashTimer);
+    this._flashTimer = setTimeout(() => el.classList.remove("show"), 4000);
+}
+
+showSuccess(message) { /* tương tự với .flash-success */ }
+```
+
+### 12.12 Tham chiếu sơ đồ tuần tự
+
+| Luồng | Sequence diagram |
+|-------|------------------|
+| Đăng nhập | [1. Đăng nhập](./SEQUENCE_DIAGRAMS.md#1-đăng-nhập-mail-api-connect) |
+| Kiểm tra phiên | [2. Kiểm tra phiên](./SEQUENCE_DIAGRAMS.md#2-kiểm-tra-phiên-khi-khởi-động-spa) |
+| Fetch email | [4. Fetch email thủ công](./SEQUENCE_DIAGRAMS.md#4-fetch-email-thủ-công) |
+| Phân tích paste text | [8. Phân tích email thủ công](./SEQUENCE_DIAGRAMS.md#8-phân-tích-email-thủ-công-paste-text) |
+| Translate + analyze | [9. Dịch + phân tích bản dịch](./SEQUENCE_DIAGRAMS.md#9-dịch--phân-tích-bản-dịch) |
+| Dashboard | [11. Dashboard stats](./SEQUENCE_DIAGRAMS.md#11-dashboard-stats) |
+| Bulk analyze | [12. Bulk analyze](./SEQUENCE_DIAGRAMS.md#12-bulk-analyze-frontend) |
+| Chi tiết email | [13. Xem chi tiết email](./SEQUENCE_DIAGRAMS.md#13-xem-chi-tiết-email) |
