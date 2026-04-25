@@ -45,9 +45,14 @@ class StatsService:
             },
             "virustotal": {
                 "total_links": vt_stats.get("total_links", 0) or 0,
+                "scanned_links": vt_stats.get("scanned_links", 0) or 0,
                 "malicious_links": vt_stats.get("malicious_links", 0) or 0,
                 "suspicious_links": vt_stats.get("suspicious_links", 0) or 0,
+                "clean_links": vt_stats.get("clean_links", 0) or 0,
+                "pending_links": vt_stats.get("pending_links", 0) or 0,
+                "error_links": vt_stats.get("error_links", 0) or 0,
                 "total_malicious_votes": vt_stats.get("total_malicious_votes", 0) or 0,
+                "total_suspicious_votes": vt_stats.get("total_suspicious_votes", 0) or 0,
             },
             "attachments": {
                 "total": attachment_stats.get("total_attachments", 0),

@@ -355,8 +355,8 @@ class App {
         </div>
         <div class="stat-card">
           <div class="stat-card-label">VT Links Scanned</div>
-          <div class="stat-card-value info">${ov.virustotal.total_links}</div>
-          <div class="stat-card-sub">${ov.virustotal.malicious_links} malicious · ${ov.virustotal.suspicious_links} suspicious</div>
+          <div class="stat-card-value info">${ov.virustotal.scanned_links || 0}<span style="font-size:0.85rem;color:var(--text-muted)"> / ${ov.virustotal.total_links || 0}</span></div>
+          <div class="stat-card-sub">${ov.virustotal.malicious_links || 0} malicious · ${ov.virustotal.suspicious_links || 0} suspicious${ov.virustotal.pending_links ? ` · ${ov.virustotal.pending_links} pending` : ""}${ov.virustotal.error_links ? ` · <span style="color:var(--danger,#e57373)">${ov.virustotal.error_links} error</span>` : ""}</div>
         </div>
         <div class="stat-card">
           <div class="stat-card-label">Attachments Scanned</div>
@@ -537,13 +537,13 @@ class App {
         </div>
       `;
 
-      // ── Link risk stats ───────────────────────────────────────────
+      // ── VirusTotal link stats ─────────────────────────────────────
       const topMalicious = links.top_malicious || [];
       const linksHtml = `
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Link Risk Analysis</span>
-            <span class="text-muted" style="font-size:0.78rem">${links.total_links || 0} links total</span>
+            <span class="card-title">VirusTotal Link Analysis</span>
+            <span class="text-muted" style="font-size:0.78rem">${links.scanned_links || 0} / ${links.total_links || 0} VT links scanned</span>
           </div>
           <div class="card-body">
             <div class="stats-feature-grid" style="margin-bottom:14px">
@@ -559,24 +559,28 @@ class App {
                 <div class="stats-feature-value" style="color:var(--success)">${links.clean_links || 0}</div>
                 <div class="stats-feature-label">Clean</div>
               </div>
+              <div class="stats-feature-item">
+                <div class="stats-feature-value" style="color:var(--text-muted)">${(links.pending_links || 0) + (links.error_links || 0)}</div>
+                <div class="stats-feature-label">Pending/Error</div>
+              </div>
             </div>
             ${topMalicious.length > 0 ? `
-              <p class="stats-section-label">Top Malicious URLs</p>
+              <p class="stats-section-label">Top Flagged URLs</p>
               <div class="table-scroll" style="margin-top:6px">
                 <table class="fetch-history-table">
-                  <thead><tr><th>Domain</th><th>Type</th><th>Risk</th></tr></thead>
+                  <thead><tr><th>URL</th><th>Malicious</th><th>Suspicious</th></tr></thead>
                   <tbody>
                     ${topMalicious.map((r) => `
                       <tr>
-                        <td class="vt-url-cell">${this.escapeHtml(r.domain || r.url || "")}</td>
-                        <td><span class="badge badge-warning">${r.link_type || ""}</span></td>
-                        <td><span class="badge badge-danger">${(r.risk_score * 100).toFixed(0)}%</span></td>
+                        <td class="vt-url-cell">${this.escapeHtml(r.url || "")}</td>
+                        <td><span class="badge ${(r.malicious || 0) > 0 ? "badge-danger" : "badge-secondary"}">${r.malicious || 0}</span></td>
+                        <td><span class="badge ${(r.suspicious || 0) > 0 ? "badge-warning" : "badge-secondary"}">${r.suspicious || 0}</span></td>
                       </tr>
                     `).join("")}
                   </tbody>
                 </table>
               </div>
-            ` : '<p class="text-muted">No malicious links detected.</p>'}
+            ` : '<p class="text-muted">No flagged links detected.</p>'}
           </div>
         </div>
       `;
@@ -1594,7 +1598,10 @@ class App {
       let attachmentsSectionHtml = "";
       try {
         const attResp = await api.get(`/emails/${emailId}/attachments`);
-        const attachments = attResp.data?.attachments || [];
+        let attachments = attResp.data?.attachments || [];
+        if (attachments.some((att) => att.scan?.status === "pending_scan")) {
+          attachments = await this._refreshPendingAttachments(emailId, attachments);
+        }
         if (attachments.length > 0) {
           attachmentsSectionHtml = this._buildAttachmentsTableHtml(
             attachments,
@@ -1841,13 +1848,23 @@ class App {
     `;
   }
 
+  async _refreshPendingAttachments(emailId, fallbackAttachments = []) {
+    try {
+      await api.post(`/emails/${emailId}/attachments/refresh-pending`, {});
+      const attResp = await api.get(`/emails/${emailId}/attachments`);
+      return attResp.data?.attachments || fallbackAttachments;
+    } catch (_) {
+      return fallbackAttachments;
+    }
+  }
+
   async runAttachmentScanForEmail(emailId) {
     try {
       this.showLoading();
       const resp = await api.post(`/emails/${emailId}/attachments/scan`, {});
       const r = resp.data || {};
       this.showSuccess(
-        `VT file scan: ${r.checked || 0} checked, ${r.pending || 0} pending, ${r.errors || 0} errors. Quota left: ${r.quota_remaining ?? "?"}`,
+        `VT file scan: ${r.checked || 0} checked, ${r.pending || 0} pending, ${r.skipped || 0} skipped, ${r.errors || 0} errors. Quota left: ${r.quota_remaining ?? "?"}`,
       );
       await this.viewEmail(emailId);
     } catch (e) {

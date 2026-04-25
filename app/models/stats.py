@@ -82,18 +82,20 @@ class StatsModel:
 
     @staticmethod
     def get_vt_overview(user_id: int) -> dict:
-        """Link risk summary derived from prediction_links (risk_score thresholds)."""
+        """VirusTotal link summary derived from stored VT check results."""
         sql = """
         SELECT
-            COUNT(*)                                                                     AS total_links,
-            SUM(CASE WHEN pl.risk_score >= 0.7 THEN 1 ELSE 0 END)                      AS malicious_links,
-            SUM(CASE WHEN pl.risk_score >= 0.5 AND pl.risk_score < 0.7 THEN 1 ELSE 0 END) AS suspicious_links,
-            COALESCE(SUM(CASE WHEN pl.risk_score >= 0.7 THEN ROUND(pl.risk_score * 10) ELSE 0 END), 0) AS total_malicious_votes,
-            COALESCE(AVG(CASE WHEN pl.risk_score >= 0.7 THEN pl.risk_score END), 0.0)  AS avg_malicious_votes
-        FROM prediction_links pl
-        JOIN predictions p ON pl.prediction_id = p.id
-        JOIN emails e      ON p.email_id = e.id
-        WHERE e.user_id = ?
+            COUNT(*) AS total_links,
+            SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS scanned_links,
+            SUM(CASE WHEN status = 'success' AND malicious > 0 THEN 1 ELSE 0 END) AS malicious_links,
+            SUM(CASE WHEN status = 'success' AND malicious = 0 AND suspicious > 0 THEN 1 ELSE 0 END) AS suspicious_links,
+            SUM(CASE WHEN status = 'success' AND malicious = 0 AND suspicious = 0 THEN 1 ELSE 0 END) AS clean_links,
+            SUM(CASE WHEN status = 'pending_scan' THEN 1 ELSE 0 END) AS pending_links,
+            SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error_links,
+            COALESCE(SUM(CASE WHEN status = 'success' THEN malicious ELSE 0 END), 0) AS total_malicious_votes,
+            COALESCE(SUM(CASE WHEN status = 'success' THEN suspicious ELSE 0 END), 0) AS total_suspicious_votes
+        FROM vt_link_checks
+        WHERE user_id = ?
         """
         with get_db() as conn:
             row = conn.execute(sql, (user_id,)).fetchone()
@@ -405,38 +407,39 @@ class StatsModel:
     @staticmethod
     def get_link_stats(user_id: int, top_n: int = 10) -> dict:
         """
-        Link risk aggregates from prediction_links (risk_score thresholds).
+        Link risk aggregates from VirusTotal check results.
         Returns {total_links, malicious_links, suspicious_links,
-                 clean_links, total_malicious_votes, top_malicious: [...]}
-        malicious  → risk_score >= 0.7
-        suspicious → 0.5 <= risk_score < 0.7
-        clean      → risk_score < 0.5
+                 clean_links, pending_links, error_links,
+                 total_malicious_votes, top_malicious: [...]}
         """
         agg_sql = """
         SELECT
-            COUNT(*)                                                                          AS total_links,
-            SUM(CASE WHEN pl.risk_score >= 0.7 THEN 1 ELSE 0 END)                           AS malicious_links,
-            SUM(CASE WHEN pl.risk_score >= 0.5 AND pl.risk_score < 0.7 THEN 1 ELSE 0 END)  AS suspicious_links,
-            SUM(CASE WHEN pl.risk_score < 0.5 THEN 1 ELSE 0 END)                            AS clean_links,
-            COALESCE(SUM(CASE WHEN pl.risk_score >= 0.7 THEN ROUND(pl.risk_score * 10) ELSE 0 END), 0) AS total_malicious_votes
-        FROM prediction_links pl
-        JOIN predictions p ON pl.prediction_id = p.id
-        JOIN emails e      ON p.email_id = e.id
-        WHERE e.user_id = ?
+            COUNT(*) AS total_links,
+            SUM(CASE WHEN status = 'success' THEN 1 ELSE 0 END) AS scanned_links,
+            SUM(CASE WHEN status = 'success' AND malicious > 0 THEN 1 ELSE 0 END) AS malicious_links,
+            SUM(CASE WHEN status = 'success' AND malicious = 0 AND suspicious > 0 THEN 1 ELSE 0 END) AS suspicious_links,
+            SUM(CASE WHEN status = 'success' AND malicious = 0 AND suspicious = 0 THEN 1 ELSE 0 END) AS clean_links,
+            SUM(CASE WHEN status = 'pending_scan' THEN 1 ELSE 0 END) AS pending_links,
+            SUM(CASE WHEN status = 'error' THEN 1 ELSE 0 END) AS error_links,
+            COALESCE(SUM(CASE WHEN status = 'success' THEN malicious ELSE 0 END), 0) AS total_malicious_votes,
+            COALESCE(SUM(CASE WHEN status = 'success' THEN suspicious ELSE 0 END), 0) AS total_suspicious_votes
+        FROM vt_link_checks
+        WHERE user_id = ?
         """
 
         top_sql = """
         SELECT
-            pl.url,
-            pl.domain,
-            pl.link_type,
-            ROUND(pl.risk_score, 3) AS risk_score,
-            pl.created_at           AS last_checked_at
-        FROM prediction_links pl
-        JOIN predictions p ON pl.prediction_id = p.id
-        JOIN emails e      ON p.email_id = e.id
-        WHERE e.user_id = ? AND pl.risk_score >= 0.7
-        ORDER BY pl.risk_score DESC
+            url,
+            malicious,
+            suspicious,
+            harmless,
+            undetected,
+            last_checked_at
+        FROM vt_link_checks
+        WHERE user_id = ?
+          AND status = 'success'
+          AND (malicious > 0 OR suspicious > 0)
+        ORDER BY malicious DESC, suspicious DESC, last_checked_at DESC
         LIMIT ?
         """
 
@@ -444,6 +447,18 @@ class StatsModel:
             agg = dict(conn.execute(agg_sql, (user_id,)).fetchone() or {})
             top_rows = conn.execute(top_sql, (user_id, top_n)).fetchall()
 
+        for key in (
+            "total_links",
+            "scanned_links",
+            "malicious_links",
+            "suspicious_links",
+            "clean_links",
+            "pending_links",
+            "error_links",
+            "total_malicious_votes",
+            "total_suspicious_votes",
+        ):
+            agg[key] = int(agg.get(key) or 0)
         agg["top_malicious"] = [dict(r) for r in top_rows]
         return agg
 

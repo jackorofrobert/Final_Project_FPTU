@@ -872,3 +872,39 @@ async def scan_email_attachments(
         return error_response(
             error=str(e), message="Error scanning attachments", status_code=500
         )
+
+
+@router.post(
+    "/{email_id}/attachments/refresh-pending",
+    summary="Refresh pending VirusTotal attachment reports",
+    description=(
+        "Re-checks only attachments already queued in VirusTotal. "
+        "Does not upload files again."
+    ),
+    tags=["Emails"],
+)
+async def refresh_pending_email_attachments(
+    request: Request,
+    email_id: int,
+    user_id: int = Depends(get_current_user_dependency),
+):
+    request_id = getattr(request.state, "request_id", "unknown")
+    try:
+        result = VirusTotalService.refresh_pending_email_attachments(user_id, email_id)
+        logger.info(
+            f"Refresh pending attachment scans [email_id={email_id}] [user_id={user_id}] "
+            f"[request_id={request_id}] result={result}"
+        )
+        return success_response(data=result)
+    except ValueError as e:
+        return not_found_response(str(e))
+    except Exception as e:
+        logger.error(
+            f"Error refreshing pending attachments [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e),
+            message="Error refreshing pending attachments",
+            status_code=500,
+        )

@@ -289,6 +289,11 @@ class VirusTotalService:
         size = int(attachment.get("size") or 0)
         filename = attachment.get("filename") or "attachment.bin"
         storage_path = attachment.get("storage_path")
+        existing_check = VTAttachmentCheck.get_by_attachment_id(attachment_id)
+        is_pending_retry = (
+            existing_check is not None
+            and existing_check.get("status") == "pending_scan"
+        )
 
         # Skip metadata-only rows (the surrogate sha cannot be resolved by VT)
         if not storage_path:
@@ -342,6 +347,16 @@ class VirusTotalService:
                 undetected=stats["undetected"],
             )
             return "checked", 1
+
+        if is_pending_retry:
+            VTAttachmentCheck.upsert(
+                user_id=user_id,
+                email_id=email_id,
+                attachment_id=attachment_id,
+                sha256=sha256,
+                status="pending_scan",
+            )
+            return "pending", 1
 
         # Step 2: VT has never seen this file → upload (eligible only if size is OK)
         if size <= 0 or size > settings.ATTACHMENT_MAX_SIZE_BYTES:
@@ -441,6 +456,52 @@ class VirusTotalService:
             if VTAttachmentCheck.exists_success(att["id"]):
                 skipped += 1
                 continue
+            outcome, used = VirusTotalService._scan_attachment_row(att, user_id)
+            if used > 0:
+                VTDailyUsage.increment(VirusTotalService._today_key(), used)
+                remaining -= used
+            if outcome == "checked":
+                checked += 1
+            elif outcome == "pending":
+                pending += 1
+            elif outcome == "error":
+                errors += 1
+            else:
+                skipped += 1
+
+        return {
+            "checked": checked,
+            "pending": pending,
+            "skipped": skipped,
+            "errors": errors,
+            "quota_remaining": max(remaining, 0),
+        }
+
+    @staticmethod
+    def refresh_pending_email_attachments(user_id: int, email_id: int) -> dict:
+        """Refresh pending attachment reports for one email without uploading again."""
+        usage = VirusTotalService.get_daily_usage()
+        remaining = usage["remaining"]
+        if remaining <= 0:
+            return {"checked": 0, "pending": 0, "skipped": 0, "errors": 0, "quota_remaining": 0}
+
+        email = Email.get_by_id(email_id)
+        if not email or email.get("user_id") != user_id:
+            raise ValueError("Email not found or access denied")
+
+        checked = 0
+        pending = 0
+        skipped = 0
+        errors = 0
+
+        for att in EmailAttachment.get_by_email_id(email_id):
+            if remaining <= 0:
+                break
+            scan = VTAttachmentCheck.get_by_attachment_id(att["id"])
+            if not scan or scan.get("status") != "pending_scan":
+                skipped += 1
+                continue
+
             outcome, used = VirusTotalService._scan_attachment_row(att, user_id)
             if used > 0:
                 VTDailyUsage.increment(VirusTotalService._today_key(), used)
