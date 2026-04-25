@@ -359,6 +359,7 @@ class MailApiService:
         recipient        → first to address
         body             → text body (falls back to html)
         received_at      → ISO datetime string
+        attachments      → list of {filename, mime_type, size, content_b64?, attachment_id?}
         """
         uid = message.get("uid", "")
 
@@ -385,14 +386,129 @@ class MailApiService:
         date_raw = message.get("date", "")
         received_at = MailApiService._parse_date(date_raw)
 
+        attachments = MailApiService._parse_attachments(message)
+
         return {
             "gmail_message_id": str(uid),  # reuse existing DB column name
+            "uid": uid,  # original uid kept for follow-up attachment fetches
             "subject": message.get("subject", ""),
             "sender": sender,
             "recipient": recipient,
             "body": body,
             "received_at": received_at,
+            "attachments": attachments,
         }
+
+    @staticmethod
+    def _parse_attachments(message: dict) -> list[dict]:
+        """Normalize the attachments array from a mail-api message.
+
+        The mail-api may inline content as base64 (`content` / `contentBase64` /
+        `data`) or only return metadata + an identifier the caller must use to
+        download the blob. We keep both shapes — the persistence layer fetches
+        on-demand if no inline content is present.
+        """
+        raw = message.get("attachments") or message.get("attachment") or []
+        if not isinstance(raw, list):
+            return []
+
+        normalized: list[dict] = []
+        for att in raw:
+            if not isinstance(att, dict):
+                continue
+
+            filename = (
+                att.get("filename")
+                or att.get("name")
+                or att.get("fileName")
+                or "attachment.bin"
+            )
+            mime_type = (
+                att.get("contentType")
+                or att.get("mimeType")
+                or att.get("mime")
+                or "application/octet-stream"
+            )
+            size = int(
+                att.get("size") or att.get("contentLength") or att.get("length") or 0
+            )
+
+            # Inline base64 content — supported under several common keys
+            content_b64 = (
+                att.get("contentBase64")
+                or att.get("content")
+                or att.get("data")
+                or att.get("base64")
+            )
+
+            # Identifier used to fetch the blob in a separate request
+            attachment_id = (
+                att.get("id")
+                or att.get("attachmentId")
+                or att.get("partId")
+                or att.get("uid")
+            )
+
+            normalized.append(
+                {
+                    "filename": filename,
+                    "mime_type": mime_type,
+                    "size": size,
+                    "content_b64": content_b64,
+                    "attachment_id": attachment_id,
+                }
+            )
+
+        return normalized
+
+    @staticmethod
+    def fetch_attachment_content(
+        user_id: int, message_uid, attachment_id, folder: str = FOLDER
+    ) -> bytes | None:
+        """Fetch raw attachment bytes from the mail API.
+
+        Tries `/api/mail/attachment` (most common shape). Returns None if the
+        server returns no recognizable payload — caller should treat as
+        "content unavailable" and skip storage of bytes.
+        """
+        if attachment_id is None and message_uid is None:
+            return None
+
+        payload = {
+            "folder": folder,
+            "uid": message_uid,
+            "attachmentId": attachment_id,
+        }
+        try:
+            data = MailApiService._post_with_refresh(
+                user_id=user_id,
+                url=f"{settings.MAIL_API_BASE_URL}/api/mail/attachment",
+                payload=payload,
+            )
+        except Exception as e:
+            logger.warning(
+                f"Mail API attachment fetch failed [user_id={user_id}] "
+                f"[uid={message_uid}] [attachmentId={attachment_id}]: {e}"
+            )
+            return None
+
+        if not data:
+            return None
+
+        import base64
+
+        b64 = (
+            data.get("contentBase64")
+            or data.get("content")
+            or data.get("data")
+            or data.get("base64")
+        )
+        if not b64:
+            return None
+        try:
+            return base64.b64decode(b64)
+        except Exception:
+            return None
 
     @staticmethod
     def _parse_date(date_str: str) -> str:

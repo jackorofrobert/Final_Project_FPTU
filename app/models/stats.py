@@ -16,10 +16,16 @@ from app.db.session import get_db
 # Helper CTE strings (composed into each query below)
 # ---------------------------------------------------------------------------
 
-# Latest prediction id per email  →  join on p.id = lp.id
+# Latest *original* prediction id per email  →  join on p.id = lp.id
+# Excludes input_source='translated_body' so dashboard stats stay in sync
+# with the inbox view, which also shows the original-body prediction
+# (see Prediction.get_latest_original_by_email_id).
 _LATEST_PRED_CTE = """
     WITH latest_preds AS (
-        SELECT MAX(id) AS id, email_id FROM predictions GROUP BY email_id
+        SELECT MAX(id) AS id, email_id
+        FROM predictions
+        WHERE input_source != 'translated_body'
+        GROUP BY email_id
     )
 """
 

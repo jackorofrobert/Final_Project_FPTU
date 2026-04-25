@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     # Database settings
     DATABASE_PATH: str = str(Path(__file__).parent.parent.parent / "data" / "app.db")
 
+    # Attachment storage (raw files saved per email after fetch)
+    ATTACHMENT_DIR: str = str(
+        Path(__file__).parent.parent.parent / "data" / "attachments"
+    )
+    ATTACHMENT_MAX_SIZE_BYTES: int = 32 * 1024 * 1024  # 32MB — VT public free upload cap
+
     # Mail API settings (custom mail server, port 8095)
     MAIL_API_BASE_URL: str = "http://localhost:8095"
     MAIL_API_TOKEN: str = ""  # X-Mail-Api-Token app secret

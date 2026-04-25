@@ -1,7 +1,14 @@
 """
 Email service for email CRUD operations.
 """
-from app.models import Email, Prediction, PredictionFeature, PredictionLink, SuspiciousSegment
+from app.models import (
+    Email,
+    EmailAttachment,
+    Prediction,
+    PredictionFeature,
+    PredictionLink,
+    SuspiciousSegment,
+)
 from app.services.prediction_service import PredictionService
 from app.utils.logger import get_logger
 
@@ -88,7 +95,12 @@ class EmailService:
             formula_details = result.get('formula_details', {})
             
             if features:
-                sender_risk = formula_details.get('sender_classification', 'UNKNOWN')
+                # The ensemble formula stores the domain verdict at
+                # formula_details["domain"]["domain_type"]. The previous
+                # `sender_classification` key never existed, so this column
+                # was always falling back to the literal string "UNKNOWN".
+                domain_block = formula_details.get('domain', {}) if isinstance(formula_details, dict) else {}
+                sender_risk = domain_block.get('domain_type') or 'UNKNOWN'
                 PredictionFeature.create(
                     prediction_id=prediction_id,
                     links_count=features.get('links_count', 0),
@@ -135,10 +147,33 @@ class EmailService:
     @staticmethod
     def analyze_and_save(email_id: int, email_text: str, model_version: str = None) -> dict:
         """Analyze email and save prediction with full details."""
-        # Get prediction
-        result = PredictionService.predict(email_text)
-        
-        # Save prediction with details
+        # Use the real attachment count for this email so the ML feature
+        # `has_attachment` reflects what we actually fetched, instead of the
+        # historical "Cannot detect from text → 0" stub.
+        has_attachment = 1 if EmailAttachment.count_by_email_id(email_id) > 0 else 0
+
+        # Pull the envelope From-domain off the stored row instead of letting
+        # the predictor scrape the body. Body-scraping picks up whatever email
+        # address appears first (e.g. an unsubscribe link), so TRUSTED_DOMAINS
+        # against the real sender domain wouldn't kick in.
+        sender_domain = None
+        subject = None
+        email_row = Email.get_by_id(email_id)
+        if email_row:
+            subject = email_row.get('subject')
+            sender_value = email_row.get('sender') or ''
+            import re
+            match = re.search(r'@([a-zA-Z0-9.-]+)', sender_value)
+            if match:
+                sender_domain = match.group(1).lower()
+
+        result = PredictionService.predict(
+            email_text,
+            subject=subject,
+            sender_domain=sender_domain,
+            has_attachment=has_attachment,
+        )
+
         prediction = EmailService.create_prediction(
             email_id,
             result['prediction'],
@@ -147,7 +182,7 @@ class EmailService:
             result,
             input_source='original',
         )
-        
+
         return {
             'prediction': prediction,
             'result': result

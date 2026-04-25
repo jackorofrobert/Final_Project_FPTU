@@ -262,18 +262,22 @@ async def analyze_email(
             if email_match:
                 sender_domain = email_match.group(1).lower()
         
+        from app.models import EmailAttachment
+        has_attachment = 1 if EmailAttachment.count_by_email_id(email_id) > 0 else 0
+
         result = PredictionService.predict(
             email_text=email['body'],
             subject=email.get('subject'),
-            sender_domain=sender_domain
+            sender_domain=sender_domain,
+            has_attachment=has_attachment,
         )
-        
+
         logger.info(
             f'Email prediction completed: prediction={result["prediction"]} '
             f'probability={result["probability"]:.4f} threshold={result["threshold"]} '
             f'[email_id={email_id}] [user_id={user_id}] [request_id={request_id}]'
         )
-        
+
         # Save prediction with full details
         prediction = EmailService.create_prediction(
             email_id,
@@ -347,10 +351,14 @@ async def analyze_email_translated_body(
             if email_match:
                 sender_domain = email_match.group(1).lower()
 
+        from app.models import EmailAttachment
+        has_attachment = 1 if EmailAttachment.count_by_email_id(email_id) > 0 else 0
+
         result = PredictionService.predict(
             email_text=translated,
             subject=email.get("subject"),
             sender_domain=sender_domain,
+            has_attachment=has_attachment,
         )
 
         logger.info(

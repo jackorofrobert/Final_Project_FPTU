@@ -301,7 +301,7 @@ class App {
         </div>
       </div>
       <div class="stat-grid" id="stat-grid-placeholder">
-        ${Array(5).fill(0).map(() => `<div class="stat-card"><div class="stat-card-label">…</div><div class="stat-card-value" style="color:var(--border)">—</div></div>`).join("")}
+        ${Array(6).fill(0).map(() => `<div class="stat-card"><div class="stat-card-label">…</div><div class="stat-card-value" style="color:var(--border)">—</div></div>`).join("")}
       </div>
       <div id="stats-lower"><p class="text-muted" style="text-align:center;padding:32px 0;">Loading statistics…</p></div>
     `;
@@ -357,6 +357,11 @@ class App {
           <div class="stat-card-label">VT Links Scanned</div>
           <div class="stat-card-value info">${ov.virustotal.total_links}</div>
           <div class="stat-card-sub">${ov.virustotal.malicious_links} malicious · ${ov.virustotal.suspicious_links} suspicious</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">Attachments Scanned</div>
+          <div class="stat-card-value info">${(ov.attachments && ov.attachments.scanned) || 0}<span style="font-size:0.85rem;color:var(--text-muted)"> / ${(ov.attachments && ov.attachments.total) || 0}</span></div>
+          <div class="stat-card-sub">${(ov.attachments && ov.attachments.malicious) || 0} malicious · ${(ov.attachments && ov.attachments.suspicious) || 0} suspicious${ov.attachments && ov.attachments.pending ? ` · ${ov.attachments.pending} pending` : ""}</div>
         </div>
       `;
 
@@ -731,6 +736,7 @@ class App {
                   <th>Sender</th>
                   <th>Date</th>
                   <th>Prediction</th>
+                  <th>Files</th>
                   <th>Actions</th>
                 </tr>
               </thead>
@@ -741,6 +747,7 @@ class App {
                     <td>${email.sender || ""}</td>
                     <td>${email.received_at ? email.received_at.substring(0, 10) : ""}</td>
                     <td>${this.renderPredictionBadge(email.prediction, email.vt_summary)}</td>
+                    <td>${this.renderAttachmentBadge(email.attachment_summary)}</td>
                     <td><button class="btn btn-sm btn-secondary" onclick="app.viewEmail(${email.id})">View</button></td>
                   </tr>
                 `).join("")}
@@ -1583,6 +1590,28 @@ class App {
         `;
       }
 
+      // Attachments + per-attachment VT verdicts
+      let attachmentsSectionHtml = "";
+      try {
+        const attResp = await api.get(`/emails/${emailId}/attachments`);
+        const attachments = attResp.data?.attachments || [];
+        if (attachments.length > 0) {
+          attachmentsSectionHtml = this._buildAttachmentsTableHtml(
+            attachments,
+            emailId,
+          );
+        }
+      } catch (attError) {
+        if (attError.statusCode !== 404) {
+          attachmentsSectionHtml = `
+            <h4>Attachments</h4>
+            <div class="alert alert-warning">
+              Could not load attachments: ${attError.message || "Unknown error"}
+            </div>
+          `;
+        }
+      }
+
       // VT results for this email
       let vtResults = [];
       let hasPendingVT = false;
@@ -1682,6 +1711,7 @@ class App {
             </div>
           </div>
 
+          ${attachmentsSectionHtml ? `<div class="card" id="email-attachments-card" style="margin-top:16px;padding:1rem">${attachmentsSectionHtml}</div>` : ""}
           ${vtSectionHtml ? `<div class="card" id="email-vt-card" style="margin-top:16px;padding:1rem">${vtSectionHtml}</div>` : ""}
         </div>
       `;
@@ -1754,6 +1784,69 @@ class App {
         ${pendingNote}
       </div>
     `;
+  }
+
+  _buildAttachmentsTableHtml(attachments, emailId) {
+    const fmtSize = (bytes) => {
+      if (!bytes) return "—";
+      if (bytes < 1024) return `${bytes} B`;
+      if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+      return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+    };
+    const verdictBadge = (att) => {
+      if (!att.scan) {
+        if (!att.stored) return '<span class="badge badge-secondary" title="No file content stored — cannot scan">no blob</span>';
+        return '<span class="badge badge-secondary">Not scanned</span>';
+      }
+      const s = att.scan;
+      if (s.status === "pending_scan") return '<span class="badge badge-warning">pending</span>';
+      if (s.status === "error")        return `<span class="badge badge-danger" title="${this.escapeHtml(s.error_message || "")}">error</span>`;
+      if ((s.malicious || 0) > 0)      return `<span class="badge badge-danger">malicious ${s.malicious}</span>`;
+      if ((s.suspicious || 0) > 0)     return `<span class="badge badge-warning">suspicious ${s.suspicious}</span>`;
+      return '<span class="badge badge-success">clean</span>';
+    };
+    const rows = attachments.map((att) => {
+      const vtLink = att.sha256
+        ? `<a href="https://www.virustotal.com/gui/file/${att.sha256}" target="_blank" rel="noopener noreferrer" style="font-size:0.8rem;opacity:0.7">↗ VT</a>`
+        : "";
+      return `
+        <tr>
+          <td>${this.escapeHtml(att.filename || "(unnamed)")}</td>
+          <td><span class="text-muted" style="font-size:0.82rem">${this.escapeHtml(att.mime_type || "")}</span></td>
+          <td>${fmtSize(att.size)}</td>
+          <td>${verdictBadge(att)} ${vtLink}</td>
+          <td>${att.scan?.last_checked_at ? new Date(att.scan.last_checked_at).toLocaleString() : "—"}</td>
+        </tr>
+      `;
+    }).join("");
+    return `
+      <div class="links-analysis">
+        <h4>Attachments (${attachments.length})</h4>
+        <div class="table-scroll">
+          <table class="fetch-history-table">
+            <thead><tr><th>Filename</th><th>Type</th><th>Size</th><th>VT Verdict</th><th>Last Checked</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        </div>
+        <div style="margin-top:8px">
+          <button class="btn btn-sm btn-primary" onclick="app.runAttachmentScanForEmail(${emailId})">Run VT File Scan</button>
+        </div>
+      </div>
+    `;
+  }
+
+  async runAttachmentScanForEmail(emailId) {
+    try {
+      this.showLoading();
+      const resp = await api.post(`/emails/${emailId}/attachments/scan`, {});
+      const r = resp.data || {};
+      this.showSuccess(
+        `VT file scan: ${r.checked || 0} checked, ${r.pending || 0} pending, ${r.errors || 0} errors. Quota left: ${r.quota_remaining ?? "?"}`,
+      );
+      await this.viewEmail(emailId);
+    } catch (e) {
+      this.showError(`Attachment scan failed: ${e.message || e}`);
+    }
   }
 
   _startVTPoll(emailId) {
@@ -2227,6 +2320,23 @@ class App {
     }
 
     return originalBadge;
+  }
+
+  renderAttachmentBadge(summary) {
+    if (!summary || !summary.total) return '<span class="text-muted">—</span>';
+    const total = summary.total;
+    const mal = summary.total_malicious || 0;
+    const sus = summary.total_suspicious || 0;
+    if (mal > 0) {
+      return `<span class="badge badge-danger" title="${mal} malicious / ${total} files">📎 ${total} • ${mal}🛑</span>`;
+    }
+    if (sus > 0) {
+      return `<span class="badge badge-warning" title="${sus} suspicious / ${total} files">📎 ${total} • ${sus}⚠️</span>`;
+    }
+    if (summary.has_pending) {
+      return `<span class="badge badge-info" title="Pending VT scan">📎 ${total} • ⏳</span>`;
+    }
+    return `<span class="badge badge-secondary">📎 ${total}</span>`;
   }
 
   escapeHtml(text) {

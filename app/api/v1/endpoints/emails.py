@@ -7,16 +7,19 @@ from fastapi import APIRouter, Request, Depends, Query
 from app.core.dependencies import get_current_user_dependency
 from app.models import (
     Email,
+    EmailAttachment,
     Prediction,
     User,
     FetchLog,
     AnalysisLog,
     VTLinkCheck,
+    VTAttachmentCheck,
     VTScanLog,
 )
 from app.schemas.email import EmailFetchRequest
 from app.services.email_service import EmailService
 from app.services.mail_api_service import MailApiService
+from app.services.attachment_service import AttachmentService
 from app.services.virustotal_service import VirusTotalService
 from app.utils.api_response import (
     success_response,
@@ -129,6 +132,14 @@ async def fetch(
             if not existing:
                 new_count += 1
 
+            if not existing and email and email_data.get("attachments"):
+                AttachmentService.persist_for_email(
+                    user_id=user_id,
+                    email_id=email["id"],
+                    message_uid=email_data.get("uid"),
+                    attachments=email_data["attachments"],
+                )
+
         User.update_last_fetch(user_id)
         FetchLog.create(
             user_id=user_id,
@@ -239,8 +250,10 @@ async def list_emails(
         # Batch-fetch VT summaries to avoid N+1 queries
         email_ids = [e["id"] for e in emails]
         vt_summaries = VTLinkCheck.get_summaries_for_emails(email_ids)
+        attachment_summaries = EmailAttachment.get_summaries_for_emails(email_ids)
         for email in emails:
             email["vt_summary"] = vt_summaries.get(email["id"], None)
+            email["attachment_summary"] = attachment_summaries.get(email["id"], None)
 
         logger.info(
             f"Email list retrieved: {len(emails)} emails [user_id={user_id}] [request_id={request_id}]"
@@ -778,4 +791,84 @@ async def get_predictions(
         )
         return error_response(
             error=str(e), message="Error retrieving predictions", status_code=500
+        )
+
+
+@router.get(
+    "/{email_id}/attachments",
+    summary="List attachments + VT scan results for an email",
+    description=(
+        "Returns each attachment row with its latest VirusTotal verdict (if any). "
+        "Verdict is null for attachments not yet scanned."
+    ),
+    tags=["Emails"],
+)
+async def list_email_attachments(
+    request: Request,
+    email_id: int,
+    user_id: int = Depends(get_current_user_dependency),
+):
+    request_id = getattr(request.state, "request_id", "unknown")
+    try:
+        email = Email.get_by_id(email_id)
+        if not email or email["user_id"] != user_id:
+            return unauthorized_response("Access denied")
+
+        attachments = EmailAttachment.get_by_email_id(email_id)
+        result = []
+        for att in attachments:
+            scan = VTAttachmentCheck.get_by_attachment_id(att["id"])
+            result.append(
+                {
+                    "id": att["id"],
+                    "filename": att.get("filename"),
+                    "mime_type": att.get("mime_type"),
+                    "size": att.get("size"),
+                    "sha256": att.get("sha256"),
+                    "stored": bool(att.get("storage_path")),
+                    "scan": scan,
+                }
+            )
+        return success_response(data={"attachments": result})
+    except Exception as e:
+        logger.error(
+            f"Error listing attachments [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error listing attachments", status_code=500
+        )
+
+
+@router.post(
+    "/{email_id}/attachments/scan",
+    summary="Trigger VirusTotal scan for an email's attachments",
+    description=(
+        "Submits each unscanned attachment to VirusTotal (hash lookup first; "
+        "uploads files ≤32MB if VT has never seen them). Respects the daily quota."
+    ),
+    tags=["Emails"],
+)
+async def scan_email_attachments(
+    request: Request,
+    email_id: int,
+    user_id: int = Depends(get_current_user_dependency),
+):
+    request_id = getattr(request.state, "request_id", "unknown")
+    try:
+        result = VirusTotalService.scan_single_email_attachments(user_id, email_id)
+        logger.info(
+            f"Manual attachment scan [email_id={email_id}] [user_id={user_id}] "
+            f"[request_id={request_id}] result={result}"
+        )
+        return success_response(data=result)
+    except ValueError as e:
+        return not_found_response(str(e))
+    except Exception as e:
+        logger.error(
+            f"Error scanning attachments [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error scanning attachments", status_code=500
         )

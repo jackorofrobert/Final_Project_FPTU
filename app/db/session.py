@@ -217,6 +217,47 @@ def init_db():
                 )
             """)
 
+            # Create email_attachments table (per-email attachment metadata + blob path)
+            logger.debug("Creating email_attachments table")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS email_attachments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    email_id INTEGER NOT NULL,
+                    filename TEXT,
+                    mime_type TEXT,
+                    size INTEGER NOT NULL DEFAULT 0,
+                    sha256 TEXT NOT NULL,
+                    storage_path TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (email_id) REFERENCES emails(id) ON DELETE CASCADE,
+                    UNIQUE(email_id, sha256)
+                )
+            """)
+
+            # Create vt_attachment_checks table (per-attachment VT verdicts)
+            logger.debug("Creating vt_attachment_checks table")
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS vt_attachment_checks (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    email_id INTEGER NOT NULL,
+                    attachment_id INTEGER NOT NULL,
+                    sha256 TEXT NOT NULL,
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    malicious INTEGER DEFAULT 0,
+                    suspicious INTEGER DEFAULT 0,
+                    harmless INTEGER DEFAULT 0,
+                    undetected INTEGER DEFAULT 0,
+                    last_checked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    error_message TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (email_id) REFERENCES emails(id) ON DELETE CASCADE,
+                    FOREIGN KEY (attachment_id) REFERENCES email_attachments(id) ON DELETE CASCADE,
+                    UNIQUE(attachment_id)
+                )
+            """)
+
             # Create vt_link_checks table (tracks VirusTotal checks per email-link)
             logger.debug("Creating vt_link_checks table")
             cursor.execute("""
@@ -348,6 +389,21 @@ def init_db():
             )
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_translation_logs_user_id ON translation_logs(user_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_email_attachments_email_id ON email_attachments(email_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_email_attachments_sha256 ON email_attachments(sha256)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vt_attachment_checks_user_id ON vt_attachment_checks(user_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vt_attachment_checks_email_id ON vt_attachment_checks(email_id)"
+            )
+            cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_vt_attachment_checks_sha256 ON vt_attachment_checks(sha256)"
             )
             cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_translation_logs_user_created "

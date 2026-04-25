@@ -13,6 +13,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from app.models import User, Email, FetchLog, AnalysisLog, VTScanLog
 from app.services.mail_api_service import MailApiService
 from app.services.email_service import EmailService
+from app.services.attachment_service import AttachmentService
 from app.services.virustotal_service import VirusTotalService
 from app.utils.logger import get_logger
 
@@ -59,7 +60,7 @@ def fetch_new_emails_for_all_users():
                 existing = EmailService.get_email_by_gmail_id(
                     user_id, email_data["gmail_message_id"]
                 )
-                EmailService.create_email(
+                stored = EmailService.create_email(
                     user_id=user_id,
                     gmail_message_id=email_data["gmail_message_id"],
                     subject=email_data["subject"],
@@ -71,6 +72,15 @@ def fetch_new_emails_for_all_users():
                 stored_count += 1
                 if not existing:
                     new_count += 1
+
+                # Persist attachments only on first ingest to avoid re-downloading
+                if not existing and stored and email_data.get("attachments"):
+                    AttachmentService.persist_for_email(
+                        user_id=user_id,
+                        email_id=stored["id"],
+                        message_uid=email_data.get("uid"),
+                        attachments=email_data["attachments"],
+                    )
 
             User.update_last_fetch(user_id)
             FetchLog.create(
@@ -218,9 +228,29 @@ def scan_links_with_virustotal_for_all_users():
                 quota_remaining=result["quota_remaining"],
             )
             logger.info(
-                f"Scheduler: VT scan done [user_id={user_id}] "
+                f"Scheduler: VT link scan done [user_id={user_id}] "
                 f"checked={result['checked']} skipped={result['skipped']} "
                 f"errors={result['errors']} quota_remaining={result['quota_remaining']}"
+            )
+
+            # Reuse the same daily quota for attachment scans — runs after the
+            # link scan so URLs (the cheaper lookup) get priority.
+            att_result = VirusTotalService.scan_user_email_attachments(
+                user_id=user_id
+            )
+            VTScanLog.create(
+                user_id=user_id,
+                source="scheduler-attachments",
+                checked=att_result["checked"] + att_result["pending"],
+                skipped=att_result["skipped"],
+                errors=att_result["errors"],
+                quota_remaining=att_result["quota_remaining"],
+            )
+            logger.info(
+                f"Scheduler: VT attachment scan done [user_id={user_id}] "
+                f"checked={att_result['checked']} pending={att_result['pending']} "
+                f"skipped={att_result['skipped']} errors={att_result['errors']} "
+                f"quota_remaining={att_result['quota_remaining']}"
             )
         except Exception as e:
             logger.error(

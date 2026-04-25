@@ -3,6 +3,7 @@ Statistics service — orchestrates aggregation queries and enriches results.
 """
 
 from app.models.stats import StatsModel
+from app.models.vt_attachment_check import VTAttachmentCheck
 from app.utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -27,6 +28,8 @@ class StatsService:
         total = email_stats.get("total_emails", 0)
         analyzed = total - email_stats.get("unanalyzed_count", 0)
 
+        attachment_stats = VTAttachmentCheck.get_user_overview(user_id)
+
         return {
             "emails": {
                 "total": total,
@@ -45,6 +48,13 @@ class StatsService:
                 "malicious_links": vt_stats.get("malicious_links", 0) or 0,
                 "suspicious_links": vt_stats.get("suspicious_links", 0) or 0,
                 "total_malicious_votes": vt_stats.get("total_malicious_votes", 0) or 0,
+            },
+            "attachments": {
+                "total": attachment_stats.get("total_attachments", 0),
+                "scanned": attachment_stats.get("scanned_attachments", 0),
+                "malicious": attachment_stats.get("malicious_files", 0),
+                "suspicious": attachment_stats.get("suspicious_files", 0),
+                "pending": attachment_stats.get("pending_files", 0),
             },
         }
 
