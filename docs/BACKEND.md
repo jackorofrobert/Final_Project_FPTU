@@ -45,8 +45,10 @@ Mọi request đi theo thứ tự `endpoint → service → model → DB`. Endpo
 ### 2.2 Biến môi trường quan trọng
 
 ```env
-# Database
+# Database + storage
 DATABASE_PATH=data/app.db
+ATTACHMENT_DIR=data/attachments              # blob root cho attachment đã fetch
+ATTACHMENT_MAX_SIZE_BYTES=33554432           # 32 MB — trùng cap upload free của VT
 
 # Session & CORS
 SECRET_KEY=<random-string>
@@ -168,6 +170,8 @@ Ràng buộc: `UNIQUE(user_id, gmail_message_id)` để chống trùng.
 ### 4.5 `prediction_features`
 Ghi lại feature trích xuất khi phân tích: `links_count`, `has_attachment`, `urgent_keywords`, `sender_domain`, `sender_risk` (`TRUSTED` / `UNKNOWN` / `SUSPICIOUS` / `HIGH_RISK`).
 
+> `has_attachment` được tính từ `EmailAttachment.count_by_email_id(email_id)` (không còn stub `0`). `sender_risk` đọc từ `formula_details["domain"]["domain_type"]`.
+
 ### 4.6 `prediction_links`
 Chi tiết từng URL trong email: `url`, `domain`, `link_type`, `risk_score`.
 
@@ -177,8 +181,39 @@ Chi tiết từng URL trong email: `url`, `domain`, `link_type`, `risk_score`.
 ### 4.8 `vt_link_checks`
 Kết quả quét VirusTotal: `url`, `url_hash` (SHA256), `status` (`pending_scan` / `success` / `error`), bốn chỉ số `malicious` / `suspicious` / `harmless` / `undetected`, `last_checked_at`, `error_message`. `UNIQUE(email_id, url_hash)`.
 
-### 4.9 `vt_scan_logs`, `fetch_logs`, `analysis_logs`, `translation_logs`, `vt_daily_usage`
-Các bảng log cho từng loại tác vụ. Mỗi bản ghi chứa thời điểm, nguồn kích hoạt (`scheduler` hoặc `manual`), số lượng bản ghi xử lý và cột đặc thù (ví dụ `quota_remaining`, `chunk_count`, `duration_ms`).
+### 4.9 `email_attachments`
+Mỗi attachment fetch về từ Mail API tạo một row.
+
+| Cột | Kiểu | Ghi chú |
+|-----|------|--------|
+| id | INTEGER PK | |
+| email_id | INTEGER FK → emails.id | |
+| filename | TEXT | Lấy từ header `Content-Disposition` |
+| mime_type | TEXT | `application/pdf`, `image/png`, … |
+| size | INTEGER | Bytes thực tế (0 nếu chưa có blob) |
+| sha256 | TEXT | Hash của bytes (hoặc surrogate hash khi mail-api không trả nội dung) |
+| storage_path | TEXT NULLABLE | Đường dẫn tuyệt đối tới blob trên đĩa; `NULL` nếu chỉ có metadata |
+| created_at | TIMESTAMP | |
+
+Ràng buộc: `UNIQUE(email_id, sha256)` để dedupe khi cùng file đính kèm xuất hiện nhiều lần. Blob lưu tại `${ATTACHMENT_DIR}/${email_id}/${sha256}${ext}`.
+
+### 4.10 `vt_attachment_checks`
+Verdict VirusTotal cho từng attachment.
+
+| Cột | Kiểu | Ghi chú |
+|-----|------|--------|
+| id | INTEGER PK | |
+| user_id | INTEGER FK → users.id | |
+| email_id | INTEGER FK → emails.id | |
+| attachment_id | INTEGER FK → email_attachments.id | UNIQUE — mỗi attachment có 1 row scan |
+| sha256 | TEXT | Hash dùng để query VT |
+| status | TEXT | `pending_scan` / `success` / `error` |
+| malicious / suspicious / harmless / undetected | INTEGER | `last_analysis_stats` từ VT |
+| last_checked_at | TIMESTAMP | |
+| error_message | TEXT NULLABLE | Lưu lý do khi `status='error'` (file > 32 MB, thiếu blob, lỗi HTTP, …) |
+
+### 4.11 `vt_scan_logs`, `fetch_logs`, `analysis_logs`, `translation_logs`, `vt_daily_usage`
+Các bảng log cho từng loại tác vụ. Mỗi bản ghi chứa thời điểm, nguồn kích hoạt (`scheduler`, `scheduler-attachments`, hoặc `manual`), số lượng bản ghi xử lý và cột đặc thù (ví dụ `quota_remaining`, `chunk_count`, `duration_ms`). Job attachment scan dùng `source='scheduler-attachments'` để phân biệt với link scan.
 
 ---
 
@@ -222,9 +257,10 @@ Tích hợp Mail API tại `MAIL_API_BASE_URL`. Mọi request có header `X-Mail
 - `login(email, password, label)` → `/api/auth/token`
 - `refresh(user_id)` → `/api/auth/refresh`
 - `revoke(user_id)` → `/api/auth/revoke`
-- `fetch_emails(user_id, max_results)` gọi `/api/mail/list` lấy UID, sau đó gọi `/api/mail/message` để lấy nội dung.
+- `fetch_emails(user_id, max_results)` gọi `/api/mail/list` lấy UID, sau đó gọi `/api/mail/message`. Trả thêm `attachments[]` (xem `_parse_attachments`) và field `uid` để service tầng trên có thể follow-up download blob.
+- `fetch_attachment_content(user_id, message_uid, attachment_id)` — POST `/api/mail/attachment` để lấy bytes khi mail-api không inline base64 trong response message.
 
-Nếu access token hết hạn, service tự refresh qua `refresh_token`.
+Nếu access token hết hạn, service tự refresh qua `refresh_token`. Parser dùng nhiều khoá để tương thích nhiều shape khác nhau (`content` / `contentBase64` / `data` / `base64` cho inline; `id` / `attachmentId` / `partId` cho identifier).
 
 ### 6.3 `prediction_service.py`
 - `_load_model()` — Lazy load pipeline từ `MODEL_PATH`, đọc metadata (`threshold`, `suspicious_margin`, `feature_cols`).
@@ -234,15 +270,27 @@ Nếu access token hết hạn, service tự refresh qua `refresh_token`.
 ### 6.4 `email_service.py`
 - `create_email(...)` — Upsert theo `gmail_message_id`.
 - `get_email_by_id()`, `get_emails_by_user()`, `get_email_with_prediction()`.
-- `create_prediction(...)` — Lưu `predictions` kèm features/links/segments trong một transaction.
-- `analyze_and_save(email_id, email_text)` — Gọi `PredictionService.predict()` và lưu kết quả.
+- `create_prediction(...)` — Lưu `predictions` kèm features/links/segments trong một transaction. `sender_risk` đọc từ `formula_details["domain"]["domain_type"]` (trước đó dùng key `sender_classification` không tồn tại nên luôn ra `UNKNOWN`).
+- `analyze_and_save(email_id, email_text)` — Đọc envelope `sender` của email từ DB, regex domain rồi truyền vào `PredictionService.predict()` cùng `has_attachment` (lấy từ `EmailAttachment.count_by_email_id`). Trước đó scheduler scrape body để lấy domain → kết quả thiếu chính xác và `TRUSTED_DOMAINS` không kích hoạt được vì domain trong body khác domain From.
+
+### 6.4b `attachment_service.py`
+Persist attachment lên đĩa + DB. API:
+- `persist_for_email(user_id, email_id, message_uid, attachments)` — duyệt list trả về từ `mail_api_service._parse_attachments`. Nếu không có inline base64, fallback `MailApiService.fetch_attachment_content`.
+- Bytes được hash SHA-256 rồi ghi vào `${ATTACHMENT_DIR}/${email_id}/${sha256}${ext}`. Cùng SHA giữa các email khác nhau ⇒ ghi vào thư mục riêng từng email (không share blob giữa user khác nhau).
+- Khi không lấy được bytes, ghi metadata-only với `storage_path = NULL` và `sha256 = surrogate(filename:mime:size:uid)` để hàng UI vẫn thấy attachment tồn tại nhưng VT scan sẽ skip.
+- File > `ATTACHMENT_MAX_SIZE_BYTES` cũng store metadata-only (VT free tier không upload nổi).
 
 ### 6.5 `virustotal_service.py`
-- `get_daily_usage()` trả `{date, used, limit, remaining}` đọc từ `vt_daily_usage`.
+- `get_daily_usage()` trả `{date, used, limit, remaining}` đọc từ `vt_daily_usage`. Quota chia chung giữa **link scan** và **file scan**.
 - `scan_user_email_links(user_id)` — Duyệt email của user, trích URL từ body, hỏi VT:
   - `GET /api/v3/urls/{url_id}` → nếu đã có report, cập nhật counters.
   - Nếu 404, `POST /api/v3/urls` để queue.
   - Mỗi URL tạo/ cập nhật `vt_link_checks` và ghi tăng `vt_daily_usage`.
+- `scan_user_email_attachments(user_id)` / `scan_single_email_attachments(user_id, email_id)`:
+  - Lấy attachment chưa scan thành công (`EmailAttachment.get_unscanned_for_user`).
+  - `GET /api/v3/files/{sha256}` trước (1 quota). 200 ⇒ lưu verdict.
+  - 404 ⇒ nếu file ≤ 32 MB và có blob, `POST /api/v3/files` (multipart upload, +1 quota) rồi đánh `pending_scan`.
+  - File quá lớn / không có blob ⇒ ghi `status='error'` kèm `error_message` để UI hiển thị.
 - Nếu `used ≥ VIRUSTOTAL_DAILY_LIMIT` thì service thoát sớm để tránh vượt hạn mức.
 
 ### 6.6 `translation_service.py`
@@ -255,13 +303,13 @@ Nếu access token hết hạn, service tự refresh qua `refresh_token`.
 
 ### 6.7 `scheduler_service.py`
 Dùng APScheduler, chạy 3 job định kỳ mỗi 5 phút:
-- `fetch_new_emails_for_all_users()` — Với mỗi user có `refresh_token`, kéo tối đa 50 email mới, lưu `fetch_logs`.
+- `fetch_new_emails_for_all_users()` — Với mỗi user có `refresh_token`, kéo tối đa 50 email mới, lưu `fetch_logs`. Khi email là **mới** (insert thành công), gọi `AttachmentService.persist_for_email` để lưu blob + metadata; email đã tồn tại bỏ qua để không re-download.
 - `analyze_unanalyzed_emails_for_all_users()` — Lấy các email chưa có `predictions`, phân tích tối đa 20 email/user, ghi `analysis_logs`.
-- `scan_links_with_virustotal_for_all_users()` — Gọi `VirusTotalService.scan_user_email_links()`, ghi `vt_scan_logs` và tuân thủ quota ngày.
+- `scan_links_with_virustotal_for_all_users()` — Lần lượt gọi `VirusTotalService.scan_user_email_links()` rồi `scan_user_email_attachments()` (cùng quota). Ghi 2 row `vt_scan_logs` riêng (`source='scheduler'` cho link, `source='scheduler-attachments'` cho file). Link scan chạy trước để URL không bị file upload đốt hết quota.
 
 ### 6.8 `stats_service.py`
 Chịu trách nhiệm tính toán tất cả số liệu dashboard:
-- `get_overview(user_id)`
+- `get_overview(user_id)` — trả thêm block `attachments: {total, scanned, malicious, suspicious, pending}` từ `VTAttachmentCheck.get_user_overview`.
 - `get_threat_trend(user_id, days)`
 - `get_classification_breakdown(user_id)`
 - `get_top_senders / get_top_domains`
@@ -269,6 +317,8 @@ Chịu trách nhiệm tính toán tất cả số liệu dashboard:
 - `get_vt_link_stats(user_id, top_n)`
 - `get_email_timeline(user_id, days)`
 - `get_probability_distribution(user_id)`
+
+> Tất cả query stats đi qua CTE `latest_preds` trong [`app/models/stats.py`](../app/models/stats.py). CTE đã được cập nhật để **bỏ qua `input_source='translated_body'`** — trùng tiêu chí với inbox view (`Prediction.get_latest_original_by_email_id`) nên dashboard không còn bị "đảo lớp" khi cùng 1 email có cả prediction original lẫn translated.
 
 ---
 
@@ -288,9 +338,11 @@ Prefix chung: `/api/v1`.
 
 | Method | Path | Auth | Mô tả |
 |--------|------|------|-------|
-| POST | `/emails/fetch` | Yes | Kéo email mới từ Mail API |
-| GET | `/emails/list` | Yes | Danh sách email (phân trang) |
+| POST | `/emails/fetch` | Yes | Kéo email mới từ Mail API (đồng thời lưu attachment) |
+| GET | `/emails/list` | Yes | Danh sách email (phân trang) — kèm `attachment_summary` per row |
 | GET | `/emails/{email_id}` | Yes | Chi tiết email |
+| GET | `/emails/{email_id}/attachments` | Yes | List attachment + verdict VT cho từng file |
+| POST | `/emails/{email_id}/attachments/scan` | Yes | Trigger thủ công VT scan cho attachment của email |
 | GET | `/emails/count` | Yes | Tổng email của user |
 
 ### 7.3 `/predictions`
@@ -347,19 +399,21 @@ Prefix chung: `/api/v1`.
      → MailApiService.login() → OAuthToken lưu DB
      → request.session["user_id"] = id
 2. Client: POST /emails/fetch (max_results=50)
-     → MailApiService.fetch_emails()
+     → MailApiService.fetch_emails()        (parse attachments[] kèm)
      → EmailService.create_email()  × N
+     → AttachmentService.persist_for_email() (chỉ cho email mới)
      → FetchLog
 3. Scheduler (mỗi 5 phút):
-     fetch_new_emails_for_all_users()
+     fetch_new_emails_for_all_users()       (+ persist attachment cho email mới)
      analyze_unanalyzed_emails_for_all_users()
-       → PredictionService.predict()
+       → PredictionService.predict(sender_domain=envelope-from, has_attachment=count)
        → EmailService.create_prediction()
      scan_links_with_virustotal_for_all_users()
        → VirusTotalService.scan_user_email_links()
-       → VTScanLog / VTLinkCheck
+       → VirusTotalService.scan_user_email_attachments()
+       → VTScanLog × 2 (links + attachments) / VTLinkCheck / VTAttachmentCheck
 4. Client: GET /stats/overview
-     → StatsService.get_overview(user_id)
+     → StatsService.get_overview(user_id)   (kèm block attachments)
 ```
 
 ### 8.2 Phân tích văn bản tự do
@@ -393,9 +447,11 @@ Client → POST /predictions/analyze-translated/{email_id}
 ### 9.2 VirusTotal v3
 - Base: `https://www.virustotal.com/api/v3`.
 - Header: `x-apikey: VIRUSTOTAL_API_KEY`.
-- Endpoint: `GET /urls/{url_id}`, `POST /urls`.
-- Response chuẩn: `data.attributes.stats.{malicious, suspicious, harmless, undetected}`.
-- Quota hàng ngày tracked trong `vt_daily_usage`.
+- Endpoint dùng:
+  - URL: `GET /urls/{url_id}`, `POST /urls`.
+  - File: `GET /files/{sha256}`, `POST /files` (multipart, ≤ 32 MB cho free tier).
+- Response chuẩn: `data.attributes.last_analysis_stats.{malicious, suspicious, harmless, undetected}`.
+- Quota hàng ngày tracked trong `vt_daily_usage` (chia chung cho cả URL lẫn file). Job link scan chạy trước file scan để URL có cơ hội cover trước khi file upload đốt quota.
 
 ### 9.3 Google Gemini
 - Base: `https://generativelanguage.googleapis.com/v1beta`.

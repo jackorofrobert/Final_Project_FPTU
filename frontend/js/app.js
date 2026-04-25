@@ -361,7 +361,7 @@ class App {
         <div class="stat-card">
           <div class="stat-card-label">Attachments Scanned</div>
           <div class="stat-card-value info">${(ov.attachments && ov.attachments.scanned) || 0}<span style="font-size:0.85rem;color:var(--text-muted)"> / ${(ov.attachments && ov.attachments.total) || 0}</span></div>
-          <div class="stat-card-sub">${(ov.attachments && ov.attachments.malicious) || 0} malicious · ${(ov.attachments && ov.attachments.suspicious) || 0} suspicious${ov.attachments && ov.attachments.pending ? ` · ${ov.attachments.pending} pending` : ""}</div>
+          <div class="stat-card-sub">${(ov.attachments && ov.attachments.malicious) || 0} malicious · ${(ov.attachments && ov.attachments.suspicious) || 0} suspicious${ov.attachments && ov.attachments.pending ? ` · ${ov.attachments.pending} pending` : ""}${ov.attachments && ov.attachments.errors ? ` · <span style="color:var(--danger,#e57373)">${ov.attachments.errors} error</span>` : ""}</div>
         </div>
       `;
 
@@ -1809,12 +1809,18 @@ class App {
       const vtLink = att.sha256
         ? `<a href="https://www.virustotal.com/gui/file/${att.sha256}" target="_blank" rel="noopener noreferrer" style="font-size:0.8rem;opacity:0.7">↗ VT</a>`
         : "";
+      const errMsg = att.scan?.status === "error" && att.scan?.error_message
+        ? `<div class="text-muted" style="font-size:0.75rem;margin-top:4px;color:var(--danger,#e57373);max-width:280px;white-space:normal;word-break:break-word">${this.escapeHtml(att.scan.error_message)}</div>`
+        : "";
+      const blobNote = !att.stored
+        ? `<div class="text-muted" style="font-size:0.72rem;margin-top:2px">no local blob</div>`
+        : "";
       return `
         <tr>
           <td>${this.escapeHtml(att.filename || "(unnamed)")}</td>
           <td><span class="text-muted" style="font-size:0.82rem">${this.escapeHtml(att.mime_type || "")}</span></td>
-          <td>${fmtSize(att.size)}</td>
-          <td>${verdictBadge(att)} ${vtLink}</td>
+          <td>${fmtSize(att.size)}${blobNote}</td>
+          <td>${verdictBadge(att)} ${vtLink}${errMsg}</td>
           <td>${att.scan?.last_checked_at ? new Date(att.scan.last_checked_at).toLocaleString() : "—"}</td>
         </tr>
       `;

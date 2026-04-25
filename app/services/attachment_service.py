@@ -106,11 +106,12 @@ class AttachmentService:
             except Exception:
                 raw = None
 
-        if raw is None and att.get("attachment_id") is not None:
+        if raw is None and att.get("attachment_index") is not None:
             raw = MailApiService.fetch_attachment_content(
                 user_id=user_id,
                 message_uid=message_uid,
-                attachment_id=att["attachment_id"],
+                attachment_index=att["attachment_index"],
+                filename=filename,
             )
 
         # 2. Even with no bytes we keep metadata so the UI can show the

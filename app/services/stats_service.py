@@ -55,6 +55,8 @@ class StatsService:
                 "malicious": attachment_stats.get("malicious_files", 0),
                 "suspicious": attachment_stats.get("suspicious_files", 0),
                 "pending": attachment_stats.get("pending_files", 0),
+                "errors": attachment_stats.get("error_files", 0),
+                "unscanned": attachment_stats.get("unscanned_files", 0),
             },
         }
 

@@ -92,18 +92,24 @@ class VTAttachmentCheck:
 
     @staticmethod
     def get_user_overview(user_id: int) -> dict:
-        """Aggregate {total_attachments, scanned, malicious, suspicious, pending}."""
+        """Aggregate {total_attachments, scanned, malicious, suspicious, pending, errors}.
+
+        ``scanned`` only counts rows with ``status='success'`` so the dashboard
+        doesn't claim a file is "scanned" while it actually errored.
+        """
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
                 """SELECT
                        COUNT(a.id)                                                AS total_attachments,
-                       COUNT(v.id)                                                AS total_scanned,
-                       COALESCE(SUM(v.malicious), 0)                              AS malicious_attachments,
-                       COALESCE(SUM(v.suspicious), 0)                             AS suspicious_attachments,
-                       SUM(CASE WHEN v.malicious > 0 THEN 1 ELSE 0 END)           AS malicious_files,
-                       SUM(CASE WHEN v.suspicious > 0 AND v.malicious = 0 THEN 1 ELSE 0 END) AS suspicious_files,
-                       SUM(CASE WHEN v.status = 'pending_scan' THEN 1 ELSE 0 END) AS pending_files
+                       SUM(CASE WHEN v.status = 'success' THEN 1 ELSE 0 END)      AS total_scanned,
+                       COALESCE(SUM(CASE WHEN v.status = 'success' THEN v.malicious  ELSE 0 END), 0) AS malicious_attachments,
+                       COALESCE(SUM(CASE WHEN v.status = 'success' THEN v.suspicious ELSE 0 END), 0) AS suspicious_attachments,
+                       SUM(CASE WHEN v.status = 'success' AND v.malicious > 0 THEN 1 ELSE 0 END) AS malicious_files,
+                       SUM(CASE WHEN v.status = 'success' AND v.suspicious > 0 AND v.malicious = 0 THEN 1 ELSE 0 END) AS suspicious_files,
+                       SUM(CASE WHEN v.status = 'pending_scan' THEN 1 ELSE 0 END) AS pending_files,
+                       SUM(CASE WHEN v.status = 'error'        THEN 1 ELSE 0 END) AS error_files,
+                       SUM(CASE WHEN v.id IS NULL              THEN 1 ELSE 0 END) AS unscanned_files
                    FROM email_attachments a
                    JOIN emails e ON a.email_id = e.id
                    LEFT JOIN vt_attachment_checks v ON v.attachment_id = a.id
@@ -119,6 +125,8 @@ class VTAttachmentCheck:
                 "malicious_files": int(row["malicious_files"] or 0),
                 "suspicious_files": int(row["suspicious_files"] or 0),
                 "pending_files": int(row["pending_files"] or 0),
+                "error_files": int(row["error_files"] or 0),
+                "unscanned_files": int(row["unscanned_files"] or 0),
                 "total_malicious_votes": int(row["malicious_attachments"] or 0),
                 "total_suspicious_votes": int(row["suspicious_attachments"] or 0),
             }

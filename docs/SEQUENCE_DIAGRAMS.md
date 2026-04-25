@@ -18,6 +18,8 @@ Tập hợp các sơ đồ tuần tự (sequence diagram) mô tả luồng dữ 
 12. [Bulk analyze (frontend)](#12-bulk-analyze-frontend)
 13. [Xem chi tiết email](#13-xem-chi-tiết-email)
 14. [Auto-refresh token khi hết hạn](#14-auto-refresh-token-khi-hết-hạn)
+15. [Scheduler — Quét attachment qua VirusTotal](#15-scheduler--quét-attachment-qua-virustotal)
+16. [Manual scan attachment cho 1 email](#16-manual-scan-attachment-cho-1-email)
 
 Các bên tham gia trong toàn bộ tài liệu:
 
@@ -155,8 +157,20 @@ sequenceDiagram
     Mail-->>SVC: {uids: [...]}
     loop với mỗi UID
         SVC->>Mail: POST /api/mail/message<br/>{uid}
-        Mail-->>SVC: {subject, from, to, body, received_at}
+        Mail-->>SVC: {subject, from, to, body, received_at, attachments[]}
         SVC->>DB: INSERT OR IGNORE INTO emails<br/>(UNIQUE user_id, gmail_message_id)
+        opt email là mới và có attachment
+            loop với mỗi attachment
+                alt content base64 inline
+                    SVC->>SVC: base64-decode bytes
+                else cần fetch riêng
+                    SVC->>Mail: POST /api/mail/attachment<br/>{uid, attachmentId}
+                    Mail-->>SVC: {contentBase64}
+                end
+                SVC->>SVC: sha256, save bytes vào<br/>$ATTACHMENT_DIR/$email_id/$sha256.ext
+                SVC->>DB: UPSERT email_attachments<br/>(email_id, sha256, filename, mime, size, storage_path)
+            end
+        end
     end
     SVC->>DB: INSERT INTO fetch_logs<br/>(source:"manual", emails_fetched, new_emails)
     SVC-->>API: {count, emails[]}
@@ -187,8 +201,9 @@ sequenceDiagram
             Svc->>DB: Xóa token hỏng
             Svc->>DB: INSERT fetch_logs<br/>(status:"token_expired")
         else thành công
-            Mail-->>Svc: Danh sách email mới
+            Mail-->>Svc: Danh sách email mới (kèm attachments[])
             Svc->>DB: INSERT emails mới (bỏ qua duplicate)
+            Svc->>DB: AttachmentService.persist_for_email()<br/>(chỉ chạy với email mới insert)
             Svc->>DB: UPDATE users.last_fetch_at
             Svc->>DB: INSERT fetch_logs<br/>(source:"scheduler", new_emails)
         end
@@ -214,10 +229,13 @@ sequenceDiagram
     loop với mỗi user (≤20 email/lần)
         Svc->>DB: SELECT emails LEFT JOIN predictions<br/>WHERE predictions.id IS NULL
         loop với mỗi email
-            Svc->>Svc: PredictionService.predict(body)
+            Svc->>DB: SELECT emails.sender + COUNT(email_attachments)
+            Svc->>Svc: extract sender_domain từ envelope From<br/>has_attachment = (count > 0)
+            Svc->>Svc: PredictionService.predict(body, subject, sender_domain, has_attachment)
             Svc->>Svc: normalize_text + feature extraction
             Svc->>ML: model.predict_proba(X)
             ML-->>Svc: proba_phishing
+            Svc->>Svc: classify_domain(sender_domain)<br/>→ TRUSTED nếu domain ∈ TRUSTED_DOMAINS
             Svc->>Svc: ensemble_score = f(proba, features)
             Svc->>Svc: classification = _classify_threat_level()
             Svc->>Svc: suspicious_segments = _extract_segments()
@@ -242,30 +260,45 @@ sequenceDiagram
 
     Note over Scheduler: Trigger mỗi 5 phút
     Scheduler->>Svc: scan_links_with_virustotal_for_all_users()
-    Svc->>DB: SELECT users có email có URL
+    Svc->>DB: SELECT users có email có URL hoặc attachment
     loop với mỗi user
         Svc->>DB: get_daily_usage() {date, used, limit}
         alt used ≥ VIRUSTOTAL_DAILY_LIMIT
             Svc->>DB: INSERT vt_scan_logs<br/>(status:"quota_exceeded")
         else còn quota
+            Note over Svc: Phase 1 — quét URL trước (cheap)
             Svc->>DB: Lấy URL chưa scan từ emails
-            loop với mỗi URL (đảm bảo quota)
-                Svc->>Svc: url_id = base64(url)<br/>url_hash = sha256(url)
-                Svc->>VT: GET /api/v3/urls/{url_id}<br/>x-apikey: VIRUSTOTAL_API_KEY
+            loop với mỗi URL
+                Svc->>VT: GET /api/v3/urls/{url_id}
                 alt 200 — đã có report
                     VT-->>Svc: {malicious, suspicious, harmless, undetected}
                     Svc->>DB: UPSERT vt_link_checks (status:"success")
                 else 404 — chưa có
                     Svc->>VT: POST /api/v3/urls {url}
-                    VT-->>Svc: 200 {analysis_id}
                     Svc->>DB: UPSERT vt_link_checks (status:"pending_scan")
                 else khác
-                    VT-->>Svc: Error
                     Svc->>DB: UPSERT vt_link_checks (status:"error")
                 end
                 Svc->>DB: INSERT/UPDATE vt_daily_usage
             end
-            Svc->>DB: INSERT vt_scan_logs<br/>(checked, skipped, errors, quota_remaining)
+            Svc->>DB: INSERT vt_scan_logs<br/>(source:"scheduler", checked, skipped,<br/>errors, quota_remaining)
+
+            Note over Svc: Phase 2 — quét file (chia chung quota)
+            Svc->>DB: SELECT email_attachments<br/>chưa có vt_attachment_check (status:"success")
+            loop với mỗi attachment (đảm bảo còn quota)
+                Svc->>VT: GET /api/v3/files/{sha256}
+                alt 200 — đã có report
+                    VT-->>Svc: {malicious, suspicious, ...}
+                    Svc->>DB: UPSERT vt_attachment_checks (status:"success")
+                else 404 + size ≤ 32MB + có blob
+                    Svc->>VT: POST /api/v3/files (multipart)
+                    Svc->>DB: UPSERT vt_attachment_checks (status:"pending_scan")
+                else file quá lớn / không có blob
+                    Svc->>DB: UPSERT vt_attachment_checks (status:"error",<br/>error_message:"…")
+                end
+                Svc->>DB: INSERT/UPDATE vt_daily_usage
+            end
+            Svc->>DB: INSERT vt_scan_logs<br/>(source:"scheduler-attachments", …)
         end
     end
 ```
@@ -549,6 +582,88 @@ sequenceDiagram
         SVC->>DB: DELETE FROM oauth_tokens
         SVC-->>Any: raise AuthError
     end
+```
+
+---
+
+## 15. Scheduler — Quét attachment qua VirusTotal
+
+```mermaid
+sequenceDiagram
+    autonumber
+    participant Scheduler as APScheduler
+    participant Svc as VirusTotalService
+    participant DB
+    participant FS as Disk<br/>(ATTACHMENT_DIR)
+    participant VT
+
+    Note over Scheduler: Sau Phase URL của job VT
+    Scheduler->>Svc: scan_user_email_attachments(user_id)
+    Svc->>DB: get_daily_usage()
+    alt quota = 0
+        Svc-->>Scheduler: {checked:0, pending:0, ...}
+    else còn quota
+        Svc->>DB: SELECT email_attachments LEFT JOIN vt_attachment_checks<br/>WHERE status != 'success'
+        DB-->>Svc: [attachment, …]
+        loop với mỗi attachment
+            Svc->>VT: GET /api/v3/files/{sha256}<br/>(+1 quota)
+            alt 200 — VT đã có report
+                VT-->>Svc: last_analysis_stats {…}
+                Svc->>DB: UPSERT vt_attachment_checks<br/>(status:"success", malicious, ...)
+            else 404 + storage_path tồn tại + size ≤ 32MB
+                Svc->>FS: read bytes
+                Svc->>VT: POST /api/v3/files (multipart upload)<br/>(+1 quota)
+                Svc->>DB: UPSERT vt_attachment_checks<br/>(status:"pending_scan")
+            else 404 + size quá lớn / không có blob
+                Svc->>DB: UPSERT vt_attachment_checks<br/>(status:"error", error_message:"…")
+            else lỗi khác
+                Svc->>DB: UPSERT vt_attachment_checks<br/>(status:"error")
+            end
+            Svc->>DB: vt_daily_usage += quota_consumed
+        end
+        Svc->>DB: INSERT vt_scan_logs<br/>(source:"scheduler-attachments", checked, pending,<br/>skipped, errors, quota_remaining)
+    end
+```
+
+---
+
+## 16. Manual scan attachment cho 1 email
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant SPA
+    participant API as API /emails
+    participant Svc as VirusTotalService
+    participant DB
+    participant VT
+
+    User->>SPA: Mở chi tiết email → click "Run VT File Scan"
+    SPA->>API: POST /api/v1/emails/{id}/attachments/scan
+    API->>API: get_current_user_dependency() → user_id
+    API->>Svc: scan_single_email_attachments(user_id, email_id)
+    Svc->>DB: SELECT email + attachments
+    alt email không thuộc user
+        Svc-->>API: ValueError → 404 not_found
+    else hợp lệ
+        loop với mỗi attachment chưa scan thành công
+            Svc->>VT: GET /api/v3/files/{sha256}
+            alt 200 — verdict ngay
+                Svc->>DB: UPSERT vt_attachment_checks (status:"success")
+            else 404 và size ≤ 32MB
+                Svc->>VT: POST /api/v3/files
+                Svc->>DB: UPSERT vt_attachment_checks (status:"pending_scan")
+            else không scan được
+                Svc->>DB: UPSERT vt_attachment_checks (status:"error")
+            end
+            Svc->>DB: vt_daily_usage += quota_consumed
+        end
+        Svc-->>API: {checked, pending, skipped, errors, quota_remaining}
+    end
+    API-->>SPA: 200 {checked, pending, ...}
+    SPA->>SPA: viewEmail(emailId) — render lại bảng attachment
+    SPA-->>User: Hiển thị verdict mới + toast quota
 ```
 
 ---

@@ -218,8 +218,8 @@ Các giá trị hash được hỗ trợ: `#stats`, `#emails`, `#manage`, `#anal
 **`renderStats()` — Dashboard tổng quan**
 
 Gọi song song toàn bộ `getStats*` và render:
-- 5 stat card: Total, Phishing, Suspicious, Legitimate, VT links.
-- Classification bar: tỉ lệ phishing vs benign.
+- **6 stat card**: Total, Phishing, Suspicious, Legitimate, VT links, **Attachments Scanned** (`scanned/total · malicious · suspicious · pending`).
+- Classification bar: tỉ lệ phishing vs benign. Lưu ý: dữ liệu được tính từ CTE `latest_preds` đã loại `input_source='translated_body'` nên dashboard luôn khớp với badge ở inbox.
 - Top senders, top domains (bar chart chiều ngang).
 - Xu hướng 14 ngày, timeline nhận email 30 ngày.
 - Phân tích feature: số link trung bình, tỉ lệ có đính kèm, tỉ lệ có keyword khẩn cấp.
@@ -229,7 +229,15 @@ Gọi song song toàn bộ `getStats*` và render:
 
 **`renderEmails()` — Danh sách email**
 
-Bảng gồm cột: Subject, Sender, Date, Prediction badge, action "View". Click vào "View" gọi `viewEmail(emailId)` để hiển thị chi tiết.
+Bảng gồm cột: Subject, Sender, Date, Prediction badge, **Files** (📎 badge từ `renderAttachmentBadge(attachment_summary)` — nhuộm đỏ nếu có file malicious, vàng nếu suspicious, info nếu pending VT, xám nếu chưa scan), action "View". Click vào "View" gọi `viewEmail(emailId)` để hiển thị chi tiết.
+
+**Email detail view**
+
+Ngoài 2 panel Original/Translation cũ và bảng VT URL, view chi tiết còn render thêm card **Attachments**:
+- Bảng cột Filename / Type / Size / VT verdict / Last Checked.
+- Verdict badge map: `malicious N` (đỏ), `suspicious N` (vàng), `clean` (xanh), `pending` (vàng), `error` (đỏ kèm tooltip lý do), `Not scanned` / `no blob` (xám).
+- Mỗi dòng có link `↗ VT` mở `https://www.virustotal.com/gui/file/{sha256}`.
+- Nút "Run VT File Scan" gọi `POST /api/v1/emails/{id}/attachments/scan` rồi `viewEmail` lại để refresh kết quả.
 
 **`renderAnalyze()` — Phân tích thủ công**
 

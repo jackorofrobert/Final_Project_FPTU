@@ -413,7 +413,7 @@ class MailApiService:
             return []
 
         normalized: list[dict] = []
-        for att in raw:
+        for index, att in enumerate(raw):
             if not isinstance(att, dict):
                 continue
 
@@ -433,7 +433,9 @@ class MailApiService:
                 att.get("size") or att.get("contentLength") or att.get("length") or 0
             )
 
-            # Inline base64 content — supported under several common keys
+            # Inline base64 content (some mail-api implementations include it).
+            # The server we're integrated with returns binary via a separate
+            # endpoint instead, but we still try inline first.
             content_b64 = (
                 att.get("contentBase64")
                 or att.get("content")
@@ -441,21 +443,15 @@ class MailApiService:
                 or att.get("base64")
             )
 
-            # Identifier used to fetch the blob in a separate request
-            attachment_id = (
-                att.get("id")
-                or att.get("attachmentId")
-                or att.get("partId")
-                or att.get("uid")
-            )
-
+            # The custom mail-api expects `attachmentIndex` (0-based position)
+            # to fetch the blob — it doesn't expose individual attachment IDs.
             normalized.append(
                 {
                     "filename": filename,
                     "mime_type": mime_type,
                     "size": size,
                     "content_b64": content_b64,
-                    "attachment_id": attachment_id,
+                    "attachment_index": index,
                 }
             )
 
@@ -463,51 +459,106 @@ class MailApiService:
 
     @staticmethod
     def fetch_attachment_content(
-        user_id: int, message_uid, attachment_id, folder: str = FOLDER
+        user_id: int,
+        message_uid,
+        attachment_index: int | None = None,
+        filename: str | None = None,
+        folder: str = FOLDER,
     ) -> bytes | None:
         """Fetch raw attachment bytes from the mail API.
 
-        Tries `/api/mail/attachment` (most common shape). Returns None if the
-        server returns no recognizable payload — caller should treat as
-        "content unavailable" and skip storage of bytes.
+        Endpoint shape (per mail-api OpenAPI spec):
+
+            POST /api/mail/attachment
+                { "folder": "INBOX",
+                  "uid": <int>,
+                  "attachmentIndex": <int>,
+                  "filename": <str?> }
+            → response 200 with raw binary body.
+
+        Returns None when the server doesn't have content for the index, or
+        when authentication ultimately fails. Refreshes the access token once
+        on 401 before giving up.
         """
-        if attachment_id is None and message_uid is None:
+        if message_uid is None or attachment_index is None:
             return None
 
-        payload = {
+        url = f"{settings.MAIL_API_BASE_URL}/api/mail/attachment"
+        payload: dict = {
             "folder": folder,
-            "uid": message_uid,
-            "attachmentId": attachment_id,
+            "uid": int(message_uid) if not isinstance(message_uid, int) else message_uid,
+            "attachmentIndex": int(attachment_index),
         }
+        if filename:
+            payload["filename"] = filename
+
+        tokens = MailApiService._get_stored_tokens(user_id)
+        if not tokens or not tokens.get("access_token"):
+            return None
+
+        def _do_post(token: str) -> httpx.Response:
+            headers = {
+                **MailApiService._base_headers(),
+                "Content-Type": "application/json",
+                "X-Mail-Access-Token": token,
+            }
+            with httpx.Client(timeout=60.0) as client:
+                return client.post(url, headers=headers, json=payload)
+
         try:
-            data = MailApiService._post_with_refresh(
-                user_id=user_id,
-                url=f"{settings.MAIL_API_BASE_URL}/api/mail/attachment",
-                payload=payload,
-            )
+            resp = _do_post(tokens["access_token"])
+            if resp.status_code == 401:
+                logger.info(
+                    f"Mail API attachment 401 — refreshing token [user_id={user_id}]"
+                )
+                if not MailApiService.refresh_access_token(user_id):
+                    return None
+                refreshed = MailApiService._get_stored_tokens(user_id)
+                if not refreshed:
+                    return None
+                resp = _do_post(refreshed["access_token"])
+
+            if resp.status_code != 200:
+                logger.warning(
+                    f"Mail API attachment fetch HTTP {resp.status_code} "
+                    f"[user_id={user_id}] [uid={message_uid}] "
+                    f"[index={attachment_index}]: {resp.text[:200]}"
+                )
+                return None
+
+            content_type = (resp.headers.get("content-type") or "").lower()
+            # Some servers wrap binary inside JSON ({error_code, data:{contentBase64}})
+            # so handle both shapes.
+            if "application/json" in content_type:
+                try:
+                    body = resp.json()
+                except Exception:
+                    return None
+                inner = body.get("data") if isinstance(body, dict) else None
+                if isinstance(inner, dict):
+                    import base64
+
+                    b64 = (
+                        inner.get("contentBase64")
+                        or inner.get("content")
+                        or inner.get("data")
+                        or inner.get("base64")
+                    )
+                    if b64:
+                        try:
+                            return base64.b64decode(b64)
+                        except Exception:
+                            return None
+                # JSON with no content → treat as "no body"
+                return None
+
+            # Default path — server streamed raw bytes
+            return resp.content or None
         except Exception as e:
             logger.warning(
                 f"Mail API attachment fetch failed [user_id={user_id}] "
-                f"[uid={message_uid}] [attachmentId={attachment_id}]: {e}"
+                f"[uid={message_uid}] [index={attachment_index}]: {e}"
             )
-            return None
-
-        if not data:
-            return None
-
-        import base64
-
-        b64 = (
-            data.get("contentBase64")
-            or data.get("content")
-            or data.get("data")
-            or data.get("base64")
-        )
-        if not b64:
-            return None
-        try:
-            return base64.b64decode(b64)
-        except Exception:
             return None
 
     @staticmethod
