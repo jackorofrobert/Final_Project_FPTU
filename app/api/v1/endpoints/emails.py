@@ -841,6 +841,44 @@ async def list_email_attachments(
 
 
 @router.post(
+    "/{email_id}/attachments/reload",
+    summary="Reload email attachments from mail server",
+    description=(
+        "Fetches the original message from the mail API again and persists "
+        "attachment blobs that were previously missing or metadata-only."
+    ),
+    tags=["Emails"],
+)
+async def reload_email_attachments(
+    request: Request,
+    email_id: int,
+    user_id: int = Depends(get_current_user_dependency),
+):
+    request_id = getattr(request.state, "request_id", "unknown")
+    try:
+        email = Email.get_by_id(email_id)
+        if not email or email["user_id"] != user_id:
+            return unauthorized_response("Access denied")
+
+        result = AttachmentService.reload_for_email(user_id=user_id, email=email)
+        logger.info(
+            f"Reloaded attachments [email_id={email_id}] [user_id={user_id}] "
+            f"[request_id={request_id}] result={result}"
+        )
+        return success_response(data=result)
+    except ValueError as e:
+        return not_found_response(str(e))
+    except Exception as e:
+        logger.error(
+            f"Error reloading attachments [email_id={email_id}] [user_id={user_id}] [request_id={request_id}]: {str(e)}",
+            exc_info=True,
+        )
+        return error_response(
+            error=str(e), message="Error reloading attachments", status_code=500
+        )
+
+
+@router.post(
     "/{email_id}/attachments/scan",
     summary="Trigger VirusTotal scan for an email's attachments",
     description=(

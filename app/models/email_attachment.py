@@ -61,6 +61,42 @@ class EmailAttachment:
             return [dict(r) for r in cursor.fetchall()]
 
     @staticmethod
+    def delete_metadata_only_matches(
+        email_id: int,
+        filename: str,
+        mime_type: str,
+        size: int,
+        keep_id: int,
+    ) -> int:
+        """Delete stale metadata-only placeholders replaced by a stored blob."""
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """SELECT id FROM email_attachments
+                   WHERE email_id = ?
+                     AND filename = ?
+                     AND mime_type = ?
+                     AND size = ?
+                     AND storage_path IS NULL
+                     AND id != ?""",
+                (email_id, filename, mime_type, size, keep_id),
+            )
+            ids = [row["id"] for row in cursor.fetchall()]
+            if not ids:
+                return 0
+
+            placeholders = ",".join("?" * len(ids))
+            cursor.execute(
+                f"DELETE FROM vt_attachment_checks WHERE attachment_id IN ({placeholders})",
+                ids,
+            )
+            cursor.execute(
+                f"DELETE FROM email_attachments WHERE id IN ({placeholders})",
+                ids,
+            )
+            return cursor.rowcount
+
+    @staticmethod
     def count_by_email_id(email_id: int) -> int:
         with get_db() as conn:
             cursor = conn.cursor()

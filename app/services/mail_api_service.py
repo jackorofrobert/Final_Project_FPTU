@@ -290,6 +290,23 @@ class MailApiService:
         )
         return emails
 
+    @staticmethod
+    def fetch_message(user_id: int, message_uid) -> dict:
+        """Fetch and parse one full message from the mail API by UID."""
+        if message_uid is None:
+            raise ValueError("message_uid is required")
+
+        msg_data = MailApiService._post_with_refresh(
+            user_id=user_id,
+            url=f"{settings.MAIL_API_BASE_URL}/api/mail/message",
+            payload={"folder": FOLDER, "uid": int(message_uid)},
+        )
+        if msg_data is None:
+            raise Exception("Failed to fetch message from mail API (auth failed)")
+
+        message = msg_data.get("message", {})
+        return MailApiService._parse_message(message)
+
     # ------------------------------------------------------------------ #
     # Internal request helper with automatic token refresh                #
     # ------------------------------------------------------------------ #

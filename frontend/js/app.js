@@ -1843,6 +1843,7 @@ class App {
         </div>
         <div style="margin-top:8px">
           <button class="btn btn-sm btn-primary" onclick="app.runAttachmentScanForEmail(${emailId})">Run VT File Scan</button>
+          <button class="btn btn-sm btn-secondary" onclick="app.reloadAttachmentsForEmail(${emailId})">Reload Attachments</button>
         </div>
       </div>
     `;
@@ -1869,6 +1870,22 @@ class App {
       await this.viewEmail(emailId);
     } catch (e) {
       this.showError(`Attachment scan failed: ${e.message || e}`);
+    }
+  }
+
+  async reloadAttachmentsForEmail(emailId) {
+    try {
+      this.showLoading("Reloading attachments from mail…");
+      const resp = await api.post(`/emails/${emailId}/attachments/reload`, {});
+      const r = resp.data || {};
+      this.showSuccess(
+        `Attachments reloaded: ${r.stored || 0} stored, ${r.metadata_only || 0} metadata-only, ${r.removed_placeholders || 0} placeholder removed.`,
+      );
+      await this.viewEmail(emailId);
+    } catch (e) {
+      this.showError(`Attachment reload failed: ${e.message || e}`);
+    } finally {
+      this.hideLoading();
     }
   }
 

@@ -90,6 +90,43 @@ class AttachmentService:
         return saved
 
     @staticmethod
+    def reload_for_email(user_id: int, email: dict) -> dict:
+        """Fetch the message again from mail API and persist attachment blobs."""
+        message_uid = email.get("gmail_message_id")
+        if message_uid is None:
+            raise ValueError("Email does not have a mail UID")
+
+        email_data = MailApiService.fetch_message(user_id, message_uid)
+        attachments = email_data.get("attachments") or []
+        saved = AttachmentService.persist_for_email(
+            user_id=user_id,
+            email_id=email["id"],
+            message_uid=email_data.get("uid") or message_uid,
+            attachments=attachments,
+        )
+
+        removed_placeholders = 0
+        for row in saved:
+            if row.get("storage_path"):
+                removed_placeholders += EmailAttachment.delete_metadata_only_matches(
+                    email_id=email["id"],
+                    filename=row.get("filename") or "attachment.bin",
+                    mime_type=row.get("mime_type") or "application/octet-stream",
+                    size=int(row.get("size") or 0),
+                    keep_id=row["id"],
+                )
+
+        stored = sum(1 for row in saved if row.get("storage_path"))
+        metadata_only = len(saved) - stored
+        return {
+            "found": len(attachments),
+            "saved": len(saved),
+            "stored": stored,
+            "metadata_only": metadata_only,
+            "removed_placeholders": removed_placeholders,
+        }
+
+    @staticmethod
     def _persist_one(
         user_id: int, email_id: int, message_uid, att: dict
     ) -> dict | None:
