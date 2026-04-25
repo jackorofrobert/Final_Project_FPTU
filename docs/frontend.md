@@ -118,7 +118,13 @@ fetchEmails(maxResults)             // POST /emails/fetch  — kéo email mới 
 getEmails(limit, offset)            // GET  /emails/list
 getEmail(emailId)                   // GET  /emails/{id}
 getEmailPredictions(emailId)        // GET  /predictions/{email_id}/details
-getEmailVTResults(emailId, ...)     // GET  /emails/{id}/vt-links
+getEmailVTResults(emailId, ...)     // GET  /emails/{id}/vt-results
+runVTScanNowForEmail(emailId)       // POST /emails/{id}/vt-scan-now
+// Attachment actions are currently called through api.get/post directly:
+// GET  /emails/{id}/attachments
+// POST /emails/{id}/attachments/reload
+// POST /emails/{id}/attachments/scan
+// POST /emails/{id}/attachments/refresh-pending
 ```
 
 **Phân tích & dự đoán**
@@ -223,7 +229,7 @@ Gọi song song toàn bộ `getStats*` và render:
 - Top senders, top domains (bar chart chiều ngang).
 - Xu hướng 14 ngày, timeline nhận email 30 ngày.
 - Phân tích feature: số link trung bình, tỉ lệ có đính kèm, tỉ lệ có keyword khẩn cấp.
-- VT link risk (malicious / suspicious / clean).
+- VirusTotal link analysis lấy từ `vt_link_checks`, hiển thị `scanned/total`, malicious, suspicious, clean, pending/error. Không dùng `prediction_links` vì bảng đó là feature ML, không phải verdict VT.
 - Top 5 đoạn văn bản đáng ngờ.
 - Histogram phân bố xác suất ML.
 
@@ -238,6 +244,8 @@ Ngoài 2 panel Original/Translation cũ và bảng VT URL, view chi tiết còn 
 - Verdict badge map: `malicious N` (đỏ), `suspicious N` (vàng), `clean` (xanh), `pending` (vàng), `error` (đỏ kèm tooltip lý do), `Not scanned` / `no blob` (xám).
 - Mỗi dòng có link `↗ VT` mở `https://www.virustotal.com/gui/file/{sha256}`.
 - Nút "Run VT File Scan" gọi `POST /api/v1/emails/{id}/attachments/scan` rồi `viewEmail` lại để refresh kết quả.
+- Nút "Reload Attachments" gọi `POST /api/v1/emails/{id}/attachments/reload` để fetch lại message từ Mail API theo UID và lưu blob còn thiếu. Dùng khi attachment đang `no blob`/metadata-only hoặc cần tải lại file từ mail server.
+- Khi mở chi tiết email, nếu attachment có `status='pending_scan'`, frontend tự gọi `POST /api/v1/emails/{id}/attachments/refresh-pending` rồi tải lại danh sách attachment. Endpoint này chỉ lookup report theo hash, không upload file lại.
 
 **`renderAnalyze()` — Phân tích thủ công**
 

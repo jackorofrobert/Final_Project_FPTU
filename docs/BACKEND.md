@@ -258,9 +258,10 @@ Tích hợp Mail API tại `MAIL_API_BASE_URL`. Mọi request có header `X-Mail
 - `refresh(user_id)` → `/api/auth/refresh`
 - `revoke(user_id)` → `/api/auth/revoke`
 - `fetch_emails(user_id, max_results)` gọi `/api/mail/list` lấy UID, sau đó gọi `/api/mail/message`. Trả thêm `attachments[]` (xem `_parse_attachments`) và field `uid` để service tầng trên có thể follow-up download blob.
-- `fetch_attachment_content(user_id, message_uid, attachment_id)` — POST `/api/mail/attachment` để lấy bytes khi mail-api không inline base64 trong response message.
+- `fetch_message(user_id, message_uid)` — fetch lại một message cụ thể bằng UID (`POST /api/mail/message`), dùng cho tính năng reload attachment.
+- `fetch_attachment_content(user_id, message_uid, attachment_index, filename?)` — POST `/api/mail/attachment` để lấy bytes khi mail-api không inline base64 trong response message. Mail API hiện dùng `attachmentIndex` 0-based thay vì attachment id riêng.
 
-Nếu access token hết hạn, service tự refresh qua `refresh_token`. Parser dùng nhiều khoá để tương thích nhiều shape khác nhau (`content` / `contentBase64` / `data` / `base64` cho inline; `id` / `attachmentId` / `partId` cho identifier).
+Nếu access token hết hạn, service tự refresh qua `refresh_token`. Parser dùng nhiều khoá để tương thích nhiều shape khác nhau (`content` / `contentBase64` / `data` / `base64` cho inline). Attachment blob được fetch theo `attachment_index` 0-based vì mail-api không expose attachment id riêng.
 
 ### 6.3 `prediction_service.py`
 - `_load_model()` — Lazy load pipeline từ `MODEL_PATH`, đọc metadata (`threshold`, `suspicious_margin`, `feature_cols`).
@@ -276,6 +277,7 @@ Nếu access token hết hạn, service tự refresh qua `refresh_token`. Parser
 ### 6.4b `attachment_service.py`
 Persist attachment lên đĩa + DB. API:
 - `persist_for_email(user_id, email_id, message_uid, attachments)` — duyệt list trả về từ `mail_api_service._parse_attachments`. Nếu không có inline base64, fallback `MailApiService.fetch_attachment_content`.
+- `reload_for_email(user_id, email)` — fetch lại message từ Mail API theo `emails.gmail_message_id` (UID), parse lại `attachments[]`, persist blob/metadata, rồi xoá placeholder metadata-only trùng `filename + mime_type + size` nếu blob thật đã được tải về.
 - Bytes được hash SHA-256 rồi ghi vào `${ATTACHMENT_DIR}/${email_id}/${sha256}${ext}`. Cùng SHA giữa các email khác nhau ⇒ ghi vào thư mục riêng từng email (không share blob giữa user khác nhau).
 - Khi không lấy được bytes, ghi metadata-only với `storage_path = NULL` và `sha256 = surrogate(filename:mime:size:uid)` để hàng UI vẫn thấy attachment tồn tại nhưng VT scan sẽ skip.
 - File > `ATTACHMENT_MAX_SIZE_BYTES` cũng store metadata-only (VT free tier không upload nổi).
@@ -289,8 +291,9 @@ Persist attachment lên đĩa + DB. API:
 - `scan_user_email_attachments(user_id)` / `scan_single_email_attachments(user_id, email_id)`:
   - Lấy attachment chưa scan thành công (`EmailAttachment.get_unscanned_for_user`).
   - `GET /api/v3/files/{sha256}` trước (1 quota). 200 ⇒ lưu verdict.
-  - 404 ⇒ nếu file ≤ 32 MB và có blob, `POST /api/v3/files` (multipart upload, +1 quota) rồi đánh `pending_scan`.
+  - 404 ⇒ nếu attachment đang `pending_scan`, giữ nguyên pending và không upload lại file. Nếu chưa từng pending, file ≤ 32 MB và có blob thì `POST /api/v3/files` (multipart upload, +1 quota) rồi đánh `pending_scan`.
   - File quá lớn / không có blob ⇒ ghi `status='error'` kèm `error_message` để UI hiển thị.
+- `refresh_pending_email_attachments(user_id, email_id)` — chỉ xử lý attachment đang `pending_scan` của một email: lookup lại `GET /api/v3/files/{sha256}` để cập nhật `success` nếu VT đã có report, không upload lại file.
 - Nếu `used ≥ VIRUSTOTAL_DAILY_LIMIT` thì service thoát sớm để tránh vượt hạn mức.
 
 ### 6.6 `translation_service.py`
@@ -310,6 +313,7 @@ Dùng APScheduler, chạy 3 job định kỳ mỗi 5 phút:
 ### 6.8 `stats_service.py`
 Chịu trách nhiệm tính toán tất cả số liệu dashboard:
 - `get_overview(user_id)` — trả thêm block `attachments: {total, scanned, malicious, suspicious, pending}` từ `VTAttachmentCheck.get_user_overview`.
+- Block `virustotal` và endpoint `/stats/links` lấy từ `vt_link_checks`: `total_links`, `scanned_links`, `malicious_links`, `suspicious_links`, `clean_links`, `pending_links`, `error_links`, vote totals. Không lấy từ `prediction_links` vì `prediction_links` là output ML feature/risk, không phải verdict VT.
 - `get_threat_trend(user_id, days)`
 - `get_classification_breakdown(user_id)`
 - `get_top_senders / get_top_domains`
@@ -342,7 +346,9 @@ Prefix chung: `/api/v1`.
 | GET | `/emails/list` | Yes | Danh sách email (phân trang) — kèm `attachment_summary` per row |
 | GET | `/emails/{email_id}` | Yes | Chi tiết email |
 | GET | `/emails/{email_id}/attachments` | Yes | List attachment + verdict VT cho từng file |
+| POST | `/emails/{email_id}/attachments/reload` | Yes | Tải lại attachment từ Mail API theo UID message, lưu blob còn thiếu và xoá placeholder metadata-only đã được thay thế |
 | POST | `/emails/{email_id}/attachments/scan` | Yes | Trigger thủ công VT scan cho attachment của email |
+| POST | `/emails/{email_id}/attachments/refresh-pending` | Yes | Lookup lại report VT cho attachment đang `pending_scan`, không upload lại file |
 | GET | `/emails/count` | Yes | Tổng email của user |
 
 ### 7.3 `/predictions`

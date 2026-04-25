@@ -20,6 +20,7 @@ Tập hợp các sơ đồ tuần tự (sequence diagram) mô tả luồng dữ 
 14. [Auto-refresh token khi hết hạn](#14-auto-refresh-token-khi-hết-hạn)
 15. [Scheduler — Quét attachment qua VirusTotal](#15-scheduler--quét-attachment-qua-virustotal)
 16. [Manual scan attachment cho 1 email](#16-manual-scan-attachment-cho-1-email)
+17. [Reload attachment từ Mail API](#17-reload-attachment-từ-mail-api)
 
 Các bên tham gia trong toàn bộ tài liệu:
 
@@ -470,6 +471,7 @@ sequenceDiagram
         API-->>SPA: 200
     and
         SPA->>API: GET /stats/links?top_n=10
+        API->>Svc: get_link_stats()<br/>đọc vt_link_checks
         API-->>SPA: 200
     and
         SPA->>API: GET /stats/timeline?days=30
@@ -479,6 +481,7 @@ sequenceDiagram
         API-->>SPA: 200
     end
     SPA->>SPA: Render stat cards, bar chart CSS,<br/>histogram, trend lines
+    Note over SPA: Card VT links và VirusTotal Link Analysis<br/>dùng vt_link_checks, không dùng prediction_links
     SPA-->>User: Dashboard hiển thị đầy đủ
 ```
 
@@ -540,11 +543,28 @@ sequenceDiagram
         API->>Svc: Lấy features + links + segments
         API-->>SPA: 200
     and
-        SPA->>API: GET /api/v1/emails/{email_id}/vt-links
+        SPA->>API: GET /api/v1/emails/{email_id}/vt-results
         API->>Svc: Lấy vt_link_checks
         API-->>SPA: 200
+    and
+        SPA->>API: GET /api/v1/emails/{email_id}/attachments
+        API->>DB: SELECT email_attachments + vt_attachment_checks
+        API-->>SPA: 200
+        opt có attachment pending_scan
+            SPA->>API: POST /api/v1/emails/{email_id}/attachments/refresh-pending
+            API->>Svc: refresh_pending_email_attachments()
+            Svc->>VT: GET /api/v3/files/{sha256}
+            alt VT đã có report
+                Svc->>DB: UPSERT vt_attachment_checks status="success"
+            else vẫn chưa có report
+                Svc->>DB: giữ status="pending_scan"
+            end
+            API-->>SPA: 200 {checked,pending,...}
+            SPA->>API: GET /api/v1/emails/{email_id}/attachments
+            API-->>SPA: 200 attachments mới
+        end
     end
-    SPA->>SPA: renderEmailDetail()<br/>(body, prediction badge,<br/>link risk table, suspicious segments)
+    SPA->>SPA: renderEmailDetail()<br/>(body, prediction badge,<br/>VT link table, attachments)
     SPA-->>User: Hiển thị trang chi tiết
 ```
 
@@ -610,7 +630,9 @@ sequenceDiagram
             alt 200 — VT đã có report
                 VT-->>Svc: last_analysis_stats {…}
                 Svc->>DB: UPSERT vt_attachment_checks<br/>(status:"success", malicious, ...)
-            else 404 + storage_path tồn tại + size ≤ 32MB
+            else 404 + attachment đang pending_scan
+                Svc->>DB: UPSERT vt_attachment_checks<br/>(giữ status:"pending_scan")
+            else 404 + storage_path tồn tại + size ≤ 32MB + chưa từng pending
                 Svc->>FS: read bytes
                 Svc->>VT: POST /api/v3/files (multipart upload)<br/>(+1 quota)
                 Svc->>DB: UPSERT vt_attachment_checks<br/>(status:"pending_scan")
@@ -651,7 +673,9 @@ sequenceDiagram
             Svc->>VT: GET /api/v3/files/{sha256}
             alt 200 — verdict ngay
                 Svc->>DB: UPSERT vt_attachment_checks (status:"success")
-            else 404 và size ≤ 32MB
+            else 404 và attachment đang pending_scan
+                Svc->>DB: giữ status:"pending_scan"<br/>không upload lại file
+            else 404 và size ≤ 32MB và chưa từng pending
                 Svc->>VT: POST /api/v3/files
                 Svc->>DB: UPSERT vt_attachment_checks (status:"pending_scan")
             else không scan được
@@ -664,6 +688,51 @@ sequenceDiagram
     API-->>SPA: 200 {checked, pending, ...}
     SPA->>SPA: viewEmail(emailId) — render lại bảng attachment
     SPA-->>User: Hiển thị verdict mới + toast quota
+```
+
+---
+
+## 17. Reload attachment từ Mail API
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor User
+    participant SPA
+    participant API as API /emails
+    participant AttSvc as AttachmentService
+    participant MailSvc as MailApiService
+    participant Mail as Mail API
+    participant DB
+    participant FS as Disk<br/>(ATTACHMENT_DIR)
+
+    User->>SPA: Mở chi tiết email → click "Reload Attachments"
+    SPA->>API: POST /api/v1/emails/{id}/attachments/reload
+    API->>DB: SELECT email WHERE id=? AND user_id=?
+    alt email không thuộc user
+        API-->>SPA: 401 Access denied
+    else hợp lệ
+        API->>AttSvc: reload_for_email(user_id, email)
+        AttSvc->>MailSvc: fetch_message(user_id, email.gmail_message_id)
+        MailSvc->>Mail: POST /api/mail/message<br/>{folder:"INBOX", uid}
+        Mail-->>MailSvc: message {attachments[]}
+        MailSvc-->>AttSvc: parsed attachments<br/>{filename,mime,size,attachment_index}
+        loop với mỗi attachment
+            AttSvc->>MailSvc: fetch_attachment_content(user_id, uid, attachment_index, filename)
+            MailSvc->>Mail: POST /api/mail/attachment<br/>{folder, uid, attachmentIndex, filename}
+            alt có bytes
+                Mail-->>MailSvc: raw bytes/base64 JSON
+                AttSvc->>FS: write ${ATTACHMENT_DIR}/{email_id}/{sha256}{ext}
+                AttSvc->>DB: UPSERT email_attachments<br/>(sha256 thật, storage_path)
+                AttSvc->>DB: DELETE metadata-only placeholder trùng<br/>filename + mime_type + size
+            else không lấy được bytes
+                AttSvc->>DB: UPSERT metadata-only row<br/>(storage_path=NULL, surrogate sha)
+            end
+        end
+        AttSvc-->>API: {found,saved,stored,metadata_only,removed_placeholders}
+        API-->>SPA: 200 result
+        SPA->>SPA: viewEmail(id) để refresh bảng attachments
+    end
 ```
 
 ---
