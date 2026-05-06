@@ -8,6 +8,8 @@ class App {
     this.emailManagementData = null;
     this.pollInterval = null;
     this.lastKnownEmailCount = null;
+    this.emailsCache = [];
+    this.emailsFilter = { search: "", prediction: "all", attachments: "all", days: "all" };
     this.init();
   }
 
@@ -667,8 +669,9 @@ class App {
                     <div class="bar-chart-row">
                       <div class="bar-chart-label" style="font-family:monospace">${r.bucket}</div>
                       <div class="bar-chart-track">
-                        <div class="bar-chart-fill ${cls}" style="width:${barPct}%">${r.count} (${r.pct}%)</div>
+                        <div class="bar-chart-fill ${cls}" style="width:${barPct}%"></div>
                       </div>
+                      <div class="bar-chart-value">${r.count} <span class="text-muted">(${r.pct}%)</span></div>
                     </div>
                   `;
                 }).join("")
@@ -728,57 +731,21 @@ class App {
     try {
       const response = await api.getEmails();
       const emails = response.data.emails || [];
-
-      let emailsHtml = "";
-      if (emails.length > 0) {
-        emailsHtml = `
-          <div class="table-scroll">
-            <table class="email-table">
-              <thead>
-                <tr>
-                  <th>Subject</th>
-                  <th>Sender</th>
-                  <th>Date</th>
-                  <th>Prediction</th>
-                  <th>Files</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${emails.map((email) => `
-                  <tr>
-                    <td>${email.subject || "(No Subject)"}</td>
-                    <td>${email.sender || ""}</td>
-                    <td>${email.received_at ? email.received_at.substring(0, 10) : ""}</td>
-                    <td>${this.renderPredictionBadge(email.prediction, email.vt_summary)}</td>
-                    <td>${this.renderAttachmentBadge(email.attachment_summary)}</td>
-                    <td><button class="btn btn-sm btn-secondary" onclick="app.viewEmail(${email.id})">View</button></td>
-                  </tr>
-                `).join("")}
-              </tbody>
-            </table>
-          </div>
-        `;
-      } else {
-        emailsHtml = `
-          <div class="empty-state">
-            <p>No emails found.</p>
-            <button class="btn btn-primary" onclick="app.fetchEmails()">Fetch Emails</button>
-          </div>
-        `;
-      }
+      this.emailsCache = emails;
+      const filteredEmails = this.getFilteredEmails();
 
       document.getElementById("app-content").innerHTML = `
         <div class="page-header">
           <div>
             <h1 class="page-title">Emails</h1>
-            <p class="page-subtitle">${emails.length} email${emails.length !== 1 ? "s" : ""} in your inbox</p>
+            <p class="page-subtitle" id="emails-count-label">${this.renderEmailsCountLabel(filteredEmails.length, emails.length)}</p>
           </div>
           <div class="page-actions">
             <button class="btn btn-primary btn-sm" onclick="app.fetchEmails()">Fetch New</button>
           </div>
         </div>
-        <div class="table-container">${emailsHtml}</div>
+        ${this.renderEmailsFilters()}
+        <div class="table-container" id="emails-table-container">${this.renderEmailsTable(filteredEmails, emails.length)}</div>
       `;
       this.updateSidebar();
     } catch (error) {
@@ -787,6 +754,175 @@ class App {
         this.showLoginOverlay();
       }
     }
+  }
+
+  renderEmailsFilters() {
+    const f = this.emailsFilter;
+    return `
+      <div class="email-filter-bar">
+        <div class="email-filter-field email-filter-search">
+          <label for="emails-search">Search</label>
+          <input
+            id="emails-search"
+            class="form-control"
+            type="search"
+            value="${this.escapeHtml(f.search)}"
+            placeholder="Subject or sender"
+            oninput="app.updateEmailsFilter('search', this.value)"
+          >
+        </div>
+        <div class="email-filter-field">
+          <label for="emails-prediction-filter">Prediction</label>
+          <select id="emails-prediction-filter" class="form-control" onchange="app.updateEmailsFilter('prediction', this.value)">
+            <option value="all" ${f.prediction === "all" ? "selected" : ""}>All</option>
+            <option value="phishing" ${f.prediction === "phishing" ? "selected" : ""}>Phishing</option>
+            <option value="suspicious" ${f.prediction === "suspicious" ? "selected" : ""}>Suspicious</option>
+            <option value="legitimate" ${f.prediction === "legitimate" ? "selected" : ""}>Legitimate</option>
+            <option value="not_analyzed" ${f.prediction === "not_analyzed" ? "selected" : ""}>Not analyzed</option>
+          </select>
+        </div>
+        <div class="email-filter-field">
+          <label for="emails-attachments-filter">Files</label>
+          <select id="emails-attachments-filter" class="form-control" onchange="app.updateEmailsFilter('attachments', this.value)">
+            <option value="all" ${f.attachments === "all" ? "selected" : ""}>All</option>
+            <option value="with" ${f.attachments === "with" ? "selected" : ""}>Has files</option>
+            <option value="without" ${f.attachments === "without" ? "selected" : ""}>No files</option>
+            <option value="risky" ${f.attachments === "risky" ? "selected" : ""}>Risky files</option>
+          </select>
+        </div>
+        <div class="email-filter-field">
+          <label for="emails-days-filter">Date</label>
+          <select id="emails-days-filter" class="form-control" onchange="app.updateEmailsFilter('days', this.value)">
+            <option value="all" ${f.days === "all" ? "selected" : ""}>Any time</option>
+            <option value="1" ${f.days === "1" ? "selected" : ""}>Last 24h</option>
+            <option value="7" ${f.days === "7" ? "selected" : ""}>Last 7 days</option>
+            <option value="30" ${f.days === "30" ? "selected" : ""}>Last 30 days</option>
+          </select>
+        </div>
+        <button class="btn btn-secondary btn-sm email-filter-reset" onclick="app.resetEmailsFilter()">Reset</button>
+      </div>
+    `;
+  }
+
+  renderEmailsTable(emails, totalEmails) {
+    if (totalEmails === 0) {
+      return `
+        <div class="empty-state">
+          <p>No emails found.</p>
+          <button class="btn btn-primary" onclick="app.fetchEmails()">Fetch Emails</button>
+        </div>
+      `;
+    }
+
+    if (emails.length === 0) {
+      return `
+        <div class="empty-state">
+          <p>No emails match the current filters.</p>
+          <button class="btn btn-secondary" onclick="app.resetEmailsFilter()">Clear Filters</button>
+        </div>
+      `;
+    }
+
+    return `
+      <div class="table-scroll">
+        <table class="email-table">
+          <thead>
+            <tr>
+              <th>Subject</th>
+              <th>Sender</th>
+              <th>Date</th>
+              <th>Prediction</th>
+              <th>Files</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${emails.map((email) => `
+              <tr>
+                <td>${this.escapeHtml(email.subject || "(No Subject)")}</td>
+                <td>${this.escapeHtml(email.sender || "")}</td>
+                <td>${email.received_at ? this.escapeHtml(email.received_at.substring(0, 10)) : ""}</td>
+                <td>${this.renderPredictionBadge(email.prediction, email.vt_summary)}</td>
+                <td>${this.renderAttachmentBadge(email.attachment_summary)}</td>
+                <td><button class="btn btn-sm btn-secondary" onclick="app.viewEmail(${email.id})">View</button></td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  updateEmailsFilter(key, value) {
+    if (!Object.prototype.hasOwnProperty.call(this.emailsFilter, key)) return;
+    this.emailsFilter[key] = value;
+    this.renderFilteredEmails();
+  }
+
+  resetEmailsFilter() {
+    this.emailsFilter = { search: "", prediction: "all", attachments: "all", days: "all" };
+    const filterBar = document.querySelector(".email-filter-bar");
+    if (filterBar) filterBar.outerHTML = this.renderEmailsFilters();
+    this.renderFilteredEmails();
+  }
+
+  renderFilteredEmails() {
+    const filteredEmails = this.getFilteredEmails();
+    const tableContainer = document.getElementById("emails-table-container");
+    const countLabel = document.getElementById("emails-count-label");
+    if (tableContainer) tableContainer.innerHTML = this.renderEmailsTable(filteredEmails, this.emailsCache.length);
+    if (countLabel) countLabel.textContent = this.renderEmailsCountLabel(filteredEmails.length, this.emailsCache.length);
+  }
+
+  renderEmailsCountLabel(filteredCount, totalCount) {
+    if (filteredCount === totalCount) {
+      return `${totalCount} email${totalCount !== 1 ? "s" : ""} in your inbox`;
+    }
+    return `${filteredCount} of ${totalCount} email${totalCount !== 1 ? "s" : ""} shown`;
+  }
+
+  getFilteredEmails() {
+    return this.emailsCache.filter((email) => this.matchesEmailsFilter(email));
+  }
+
+  matchesEmailsFilter(email) {
+    const search = this.emailsFilter.search.trim().toLowerCase();
+    if (search) {
+      const subject = (email.subject || "").toLowerCase();
+      const sender = (email.sender || "").toLowerCase();
+      if (!subject.includes(search) && !sender.includes(search)) return false;
+    }
+
+    if (this.emailsFilter.prediction !== "all") {
+      const predictionType = this.getEmailPredictionType(email.prediction);
+      if (predictionType !== this.emailsFilter.prediction) return false;
+    }
+
+    if (this.emailsFilter.attachments !== "all") {
+      const summary = email.attachment_summary || {};
+      const total = summary.total || 0;
+      const risky = (summary.total_malicious || 0) > 0 || (summary.total_suspicious || 0) > 0;
+      if (this.emailsFilter.attachments === "with" && total === 0) return false;
+      if (this.emailsFilter.attachments === "without" && total > 0) return false;
+      if (this.emailsFilter.attachments === "risky" && !risky) return false;
+    }
+
+    if (this.emailsFilter.days !== "all") {
+      if (!email.received_at) return false;
+      const receivedAt = new Date(email.received_at).getTime();
+      if (Number.isNaN(receivedAt)) return false;
+      const days = parseInt(this.emailsFilter.days, 10);
+      const cutoff = Date.now() - (days * 24 * 60 * 60 * 1000);
+      if (receivedAt < cutoff) return false;
+    }
+
+    return true;
+  }
+
+  getEmailPredictionType(prediction) {
+    if (!prediction) return "not_analyzed";
+    const classification = prediction.classification || (prediction.prediction == 1 ? "PHISHING" : "LEGITIMATE");
+    return classification.toLowerCase();
   }
 
   // ──────────────────────────────────────────────────────────────────

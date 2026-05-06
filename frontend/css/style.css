@@ -567,6 +567,29 @@ a:hover { text-decoration: underline; }
 }
 .table-scroll { overflow-x: auto; }
 
+.email-filter-bar {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) repeat(3, minmax(140px, 180px)) auto;
+  gap: 12px;
+  align-items: end;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  padding: 14px;
+  margin-bottom: 14px;
+}
+.email-filter-field label {
+  display: block;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.email-filter-reset { margin-bottom: 1px; }
+
 table { width: 100%; border-collapse: collapse; }
 thead tr { background: var(--bg); }
 th {
@@ -814,6 +837,16 @@ textarea.form-control { resize: vertical; min-height: 180px; }
 .bar-chart-fill.warning { background: var(--warning); }
 .bar-chart-fill.info    { background: var(--info); }
 .bar-chart-fill.primary { background: var(--primary); }
+.bar-chart-value {
+  flex-shrink: 0;
+  width: 90px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  text-align: left;
+}
+.bar-chart-value .text-muted { font-weight: 400; }
 
 /* ── Stats dashboard extra panels ──────────────────────────────── */
 .stats-feature-grid {
@@ -1367,6 +1400,12 @@ textarea.form-control { resize: vertical; min-height: 180px; }
     z-index: 150;
   }
   .main-wrapper { width: 100%; }
+  .email-filter-bar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .email-filter-search {
+    grid-column: 1 / -1;
+  }
 }
 
 @media (max-width: 600px) {
@@ -1379,4 +1418,7 @@ textarea.form-control { resize: vertical; min-height: 180px; }
   .fetch-history-header { flex-direction: column; align-items: flex-start; gap: 10px; }
   .fetch-status-cards { grid-template-columns: 1fr 1fr; }
   .email-management-header { flex-direction: column; align-items: flex-start; gap: 10px; }
+  .email-filter-bar { grid-template-columns: 1fr; }
+  .email-filter-search { grid-column: auto; }
+  .email-filter-reset { justify-content: center; width: 100%; }
 }
